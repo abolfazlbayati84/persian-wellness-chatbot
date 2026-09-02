@@ -9,6 +9,9 @@ from app.schemas.chat import ConversationGetOrCreateRequest, MessageCreate
 from app.schemas.user import UserCreate
 from app.services.user_service import get_or_create_user
 
+from app.schemas.chat import ChatTurnRequest
+from app.services.ai_service import generate_reply
+
 
 def get_or_create_conversation(
     db: Session,
@@ -93,3 +96,46 @@ def list_messages(
         .order_by(Message.created_at.asc(), Message.id.asc())
     )
     return list(db.scalars(stmt).all())
+
+def run_chat_turn(db: Session, payload: ChatTurnRequest) -> tuple[int, Message, Message]:
+    # 1) get/create conversation
+    conversation, _ = get_or_create_conversation(
+        db=db,
+        payload=ConversationGetOrCreateRequest(
+            user_platform_id=payload.user_platform_id,
+            platform=payload.platform,
+            external_conversation_id=payload.external_conversation_id,
+            title=payload.title,
+        ),
+    )
+
+    # 2) save user message
+    user_msg = Message(
+        conversation_id=conversation.id,
+        role="user",
+        content=payload.user_message,
+    )
+    db.add(user_msg)
+    db.commit()
+    db.refresh(user_msg)
+
+    # 3) load history for model
+    history = list_messages(db=db, conversation_id=conversation.id)
+    ai_messages = [{"role": m.role, "content": m.content} for m in history if m.role in {"user", "assistant", "system"}]
+
+    # 4) generate assistant reply
+    assistant_text = generate_reply(ai_messages)
+    if not assistant_text:
+        assistant_text = "متأسفم، در حال حاضر نتوانستم پاسخ مناسب تولید کنم."
+
+    # 5) save assistant message
+    assistant_msg = Message(
+        conversation_id=conversation.id,
+        role="assistant",
+        content=assistant_text,
+    )
+    db.add(assistant_msg)
+    db.commit()
+    db.refresh(assistant_msg)
+
+    return conversation.id, user_msg, assistant_msg

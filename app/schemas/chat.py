@@ -40,3 +40,17 @@ class MessageRead(BaseModel):
     role: str
     content: str
     created_at: datetime
+
+class ChatTurnRequest(BaseModel):
+    user_platform_id: str = Field(min_length=1, max_length=100)
+    platform: str = Field(min_length=1, max_length=30)
+    external_conversation_id: str | None = Field(default=None, max_length=100)
+    title: str | None = Field(default=None, max_length=200)
+    user_message: str = Field(min_length=1)
+
+
+class ChatTurnResponse(BaseModel):
+    conversation_id: int
+    user_message_id: int
+    assistant_message_id: int
+    assistant_reply: str
