@@ -42,6 +42,9 @@ def generate_reply(messages: list[dict[str, str]], extra_system_context: str | N
     system_prompt = _compose_system_prompt(extra_system_context)
     full_messages = [{"role": "system", "content": system_prompt}] + messages
 
+    print("=== SYSTEM PROMPT START ===")
+    print(system_prompt)
+    print("=== SYSTEM PROMPT END ===")
     try:
         return _call_model(client, settings.aval_model, full_messages)
     except Exception:
