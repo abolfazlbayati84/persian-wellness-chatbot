@@ -12,6 +12,8 @@ from app.services.user_service import get_or_create_user
 from app.schemas.chat import ChatTurnRequest
 from app.services.ai_service import generate_reply
 
+from app.services.context_service import build_profile_context
+
 
 def get_or_create_conversation(
     db: Session,
@@ -136,7 +138,11 @@ def run_chat_turn(db: Session, payload: ChatTurnRequest) -> tuple[int, Message, 
     ]
 
     # 4) generate assistant reply
-    assistant_text = generate_reply(ai_messages)
+    profile_context = build_profile_context(db=db, user_id=conversation.user_id)
+    assistant_text = generate_reply(
+        ai_messages,
+        extra_system_context=profile_context,
+    )
     if not assistant_text:
         assistant_text = "متأسفم، در حال حاضر نتوانستم پاسخ مناسب تولید کنم."
 

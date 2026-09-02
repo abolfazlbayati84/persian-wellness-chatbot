@@ -34,12 +34,13 @@ def _call_model(client: OpenAI, model: str, messages: list[dict[str, str]]) -> s
     return (content or "").strip()
 
 
-def generate_reply(messages: list[dict[str, str]]) -> str:
+def generate_reply(messages: list[dict[str, str]], extra_system_context: str | None = None) -> str:
     if not settings.aval_model:
         raise ValueError("AVAL_MODEL is missing.")
 
     client = build_client()
-    full_messages = [{"role": "system", "content": SYSTEM_PROMPT_FA}] + messages
+    system_prompt = _compose_system_prompt(extra_system_context)
+    full_messages = [{"role": "system", "content": system_prompt}] + messages
 
     try:
         return _call_model(client, settings.aval_model, full_messages)
@@ -47,3 +48,8 @@ def generate_reply(messages: list[dict[str, str]]) -> str:
         if settings.aval_fallback_model:
             return _call_model(client, settings.aval_fallback_model, full_messages)
         raise
+
+def _compose_system_prompt(extra_context: str | None = None) -> str:
+    if extra_context and extra_context.strip():
+        return f"{SYSTEM_PROMPT_FA}\n\n{extra_context.strip()}"
+    return SYSTEM_PROMPT_FA
