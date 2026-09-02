@@ -13,6 +13,7 @@ class Settings(BaseModel):
     aval_api_key: str | None = os.getenv("AVAL_API_KEY")
     aval_base_url: str = os.getenv("AVAL_BASE_URL", "")
     aval_model: str = os.getenv("AVAL_MODEL", "")
+    aval_fallback_model: str = os.getenv("AVAL_FALLBACK_MODEL", "gpt-4.1-mini")
 
 
 settings = Settings()

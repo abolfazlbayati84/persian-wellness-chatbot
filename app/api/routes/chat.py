@@ -41,7 +41,7 @@ def add_message_endpoint(
     try:
         message = add_message(db=db, conversation_id=conversation_id, payload=payload)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc))
     return MessageRead.model_validate(message)
 
 

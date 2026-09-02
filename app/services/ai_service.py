@@ -23,23 +23,27 @@ def build_client() -> OpenAI:
     )
 
 
+def _call_model(client: OpenAI, model: str, messages: list[dict[str, str]]) -> str:
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=0.7,
+        max_tokens=400,
+    )
+    content = response.choices[0].message.content
+    return (content or "").strip()
+
+
 def generate_reply(messages: list[dict[str, str]]) -> str:
-    """
-    messages: [{"role":"user|assistant|system", "content":"..."}]
-    """
     if not settings.aval_model:
         raise ValueError("AVAL_MODEL is missing.")
 
     client = build_client()
-
     full_messages = [{"role": "system", "content": SYSTEM_PROMPT_FA}] + messages
 
-    response = client.chat.completions.create(
-        model=settings.aval_model,
-        messages=full_messages,
-        temperature=0.7,
-        max_tokens=400,
-    )
-
-    content = response.choices[0].message.content
-    return (content or "").strip()
+    try:
+        return _call_model(client, settings.aval_model, full_messages)
+    except Exception:
+        if settings.aval_fallback_model:
+            return _call_model(client, settings.aval_fallback_model, full_messages)
+        raise

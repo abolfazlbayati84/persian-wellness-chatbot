@@ -71,6 +71,10 @@ def add_message(
     if conversation is None:
         raise ValueError("Conversation not found.")
 
+    allowed_roles = {"user", "assistant", "system"}
+    if payload.role not in allowed_roles:
+        raise ValueError(f"Invalid role. Allowed roles: {sorted(allowed_roles)}")
+
     message = Message(
         conversation_id=conversation_id,
         role=payload.role,
@@ -121,7 +125,15 @@ def run_chat_turn(db: Session, payload: ChatTurnRequest) -> tuple[int, Message, 
 
     # 3) load history for model
     history = list_messages(db=db, conversation_id=conversation.id)
-    ai_messages = [{"role": m.role, "content": m.content} for m in history if m.role in {"user", "assistant", "system"}]
+
+    # keep only last 20 messages to control cost/latency
+    history = history[-20:]
+
+    ai_messages = [
+        {"role": m.role, "content": m.content}
+        for m in history
+        if m.role in {"user", "assistant", "system"}
+    ]
 
     # 4) generate assistant reply
     assistant_text = generate_reply(ai_messages)
