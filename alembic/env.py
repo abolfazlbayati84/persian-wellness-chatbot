@@ -8,6 +8,7 @@ from sqlalchemy import engine_from_config, pool
 from app.database.base import Base
 import app.models  # Important: imports User so Alembic can detect the table.
 
+target_metadata = Base.metadata
 
 # Alembic Config object, which provides access to alembic.ini values.
 config = context.config

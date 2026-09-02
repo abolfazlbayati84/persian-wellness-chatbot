@@ -41,5 +41,18 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
+    profile = relationship(
+        "Profile",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+    sessions = relationship(
+        "Session",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
     def __repr__(self) -> str:
         return f"<User id={self.id} platform_user_id={self.platform_user_id!r}>"
