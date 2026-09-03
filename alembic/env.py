@@ -5,8 +5,9 @@ from alembic import context
 from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 
-from app.database.base import Base
+from app.models.base import Base
 import app.models  # Important: imports User so Alembic can detect the table.
+from app.models import User, Profile, Session, Message
 
 target_metadata = Base.metadata
 
