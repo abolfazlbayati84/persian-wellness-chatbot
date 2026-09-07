@@ -1,30 +1,20 @@
 from datetime import datetime
-
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
 
 class UserCreate(BaseModel):
-    platform_user_id: str = Field(
-        min_length=1,
-        max_length=100,
-        examples=["telegram_123456"],
-    )
-    name: str | None = Field(
-        default=None,
-        max_length=100,
-        examples=["Sara"],
-    )
+    email: EmailStr | None = None
+    password: str | None = Field(default=None, min_length=6)
+    locale: str = "fa-IR"
+    status: str = "active"
 
 
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    platform_user_id: str
-    name: str | None
+    email: EmailStr | None
+    locale: str
+    status: str
     created_at: datetime
     updated_at: datetime
-
-class UserGetOrCreateResponse(BaseModel):
-    created: bool
-    user: UserRead
