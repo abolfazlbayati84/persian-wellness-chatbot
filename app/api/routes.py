@@ -27,6 +27,9 @@ from app.services.llm_client import generate_reply_with_context
 from app.services.classifiers import classify_domain, classify_risk, max_risk
 from app.services.safety_templates import CRISIS_FA
 
+from app.services.classifiers import classify_domain, classify_risk, max_risk, is_blocked_output
+from app.services.safety_templates import CRISIS_FA, MODERATE_FA, BLOCKED_OUTPUT_FA
+
 router = APIRouter()
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -66,6 +69,10 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
     token = create_access_token(subject=str(user.id))
     return TokenOut(access_token=token)
 
+
+@router.get("/auth/me")
+def auth_me(current_user: User = Depends(get_current_user)):
+    return {"id": current_user.id, "email": current_user.email}
 
 @router.post("/users", response_model=UserRead, status_code=201)
 def create_user(payload: UserCreate, db: Session = Depends(get_db)):
@@ -182,6 +189,38 @@ def chat_turn(
     if risk_tier == "severe":
         assistant_text = CRISIS_FA
         fallback_used = True
+    elif risk_tier == "moderate":
+        profile = db.query(Profile).filter(Profile.user_id == s.user_id).first()
+        profile_parts = []
+        if profile:
+            for field in ["age_range", "sleep_quality", "stress_level", "activity_level", "goal", "notes"]:
+                if hasattr(profile, field):
+                    val = getattr(profile, field)
+                    if val not in (None, "", []):
+                        profile_parts.append(f"{field}: {val}")
+        profile_context = "\n".join(profile_parts) if profile_parts else None
+
+        rows = (
+            db.query(Message)
+            .filter(
+                Message.session_id == s.id,
+                Message.id != user_msg.id,
+                Message.role.in_(["user", "assistant"]),
+            )
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(10)
+            .all()
+        )
+        rows = list(reversed(rows))
+        history = [{"role": m.role, "content": m.content} for m in rows]
+
+        llm_text = generate_reply_with_context(
+            user_text=payload.user_text,
+            profile_context=profile_context,
+            history=history,
+        )
+        assistant_text = f"{MODERATE_FA}\n\n{llm_text}"
+        fallback_used = False
     else:
         profile = db.query(Profile).filter(Profile.user_id == s.user_id).first()
         profile_parts = []
@@ -213,6 +252,10 @@ def chat_turn(
             history=history,
         )
         fallback_used = False
+
+    # Post-generation output guardrail
+    if is_blocked_output(assistant_text):
+        assistant_text = BLOCKED_OUTPUT_FA
 
     assistant_msg = Message(
         session_id=s.id,

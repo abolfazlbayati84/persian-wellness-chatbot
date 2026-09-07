@@ -110,3 +110,20 @@ def max_risk(a: RiskTier | None, b: RiskTier | None) -> RiskTier:
     aa = a if a in rank else "none"
     bb = b if b in rank else "none"
     return aa if rank[aa] >= rank[bb] else bb
+
+BLOCKED_OUTPUT_PATTERNS = [
+    r"how to kill myself",
+    r"بهترین روش خودکشی",
+    r"چطور خودمو بکشم",
+    r"دوز\s*دارو",
+    r"overdose",
+    r"\bOD\b",
+    r"راهنمای آسیب به خود",
+]
+
+def is_blocked_output(text: str) -> bool:
+    t = (text or "").lower().strip()
+    for p in BLOCKED_OUTPUT_PATTERNS:
+        if re.search(p, t):
+            return True
+    return False

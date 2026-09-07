@@ -1,11 +1,14 @@
+import os
 from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 from passlib.context import CryptContext
+from dotenv import load_dotenv
 
-# TODO: move to settings/env later
-SECRET_KEY = "CHANGE_ME_SUPER_SECRET"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 day
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_ME_SUPER_SECRET")
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
@@ -22,7 +25,7 @@ def create_access_token(subject: str, expires_minutes: int = ACCESS_TOKEN_EXPIRE
     now = datetime.now(timezone.utc)
     expire = now + timedelta(minutes=expires_minutes)
     payload = {
-        "sub": subject,  # user id as string
+        "sub": subject,
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
     }
