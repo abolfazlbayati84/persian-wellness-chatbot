@@ -14,7 +14,7 @@ from app.models.message import Message
 from app.schemas.user import UserCreate, UserRead
 from app.schemas.profile import ProfileUpsert, ProfileRead
 from app.schemas.session import SessionCreate, SessionRead, SessionMessagesOut
-from app.schemas.chat import ChatTurnIn, ChatTurnOut, MessageRead
+from app.schemas.chat import ChatTurnIn, ChatTurnOut, MessageRead, TraceItem
 from app.schemas.auth import LoginIn, TokenOut
 
 from app.core.security import (
@@ -28,6 +28,7 @@ from app.services.llm_client import generate_reply_with_context
 from app.services.classifiers import classify_domain, classify_risk, max_risk, is_blocked_output
 from app.services.safety_templates import CRISIS_FA, MODERATE_FA, BLOCKED_OUTPUT_FA
 from app.services.memory_service import build_memory_summary
+from app.services.trace_store import add_trace, list_traces, clear_traces
 
 router = APIRouter()
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -157,6 +158,10 @@ def chat_turn(
     started = time.perf_counter()
     debug_mode = _is_debug()
 
+    primary_model = (os.getenv("AVAL_MODEL", "gpt-5.4-mini") or "gpt-5.4-mini").strip()
+    fallback_model = (os.getenv("AVAL_FALLBACK_MODEL", "gpt-4.1-mini") or "gpt-4.1-mini").strip()
+    used_model_path = "none"
+
     s = db.get(ChatSession, payload.session_id)
     if not s:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -192,10 +197,12 @@ def chat_turn(
 
     memory_summary = None
     history_count = 0
+    profile_context = None
 
     if risk_tier == "severe":
         assistant_text = CRISIS_FA
         fallback_used = True
+        used_model_path = "none"
     else:
         profile = db.query(Profile).filter(Profile.user_id == s.user_id).first()
         profile_parts = []
@@ -240,6 +247,11 @@ def chat_turn(
             memory_summary=memory_summary,
         )
 
+        if "در ارتباط با مدل مشکلی پیش آمد" in llm_text:
+            used_model_path = "fallback"
+        else:
+            used_model_path = "primary"
+
         if risk_tier == "moderate":
             assistant_text = f"{MODERATE_FA}\n\n{llm_text}"
         else:
@@ -267,6 +279,30 @@ def chat_turn(
     db.refresh(s)
 
     latency_ms = int((time.perf_counter() - started) * 1000)
+
+    if debug_mode:
+        ms_preview = None
+        if memory_summary:
+            ms_preview = memory_summary if len(memory_summary) <= 260 else memory_summary[:260] + "..."
+
+        add_trace(
+            {
+                "session_id": s.id,
+                "user_id": current_user.id,
+                "domain_tag": domain_tag,
+                "risk_tier": risk_tier,
+                "session_risk_tier": s.risk_tier,
+                "history_count": history_count,
+                "used_memory_summary": bool(memory_summary),
+                "memory_summary_preview": ms_preview,
+                "used_profile_context": bool(profile_context),
+                "primary_model": primary_model,
+                "fallback_model": fallback_model,
+                "used_model_path": used_model_path,
+                "fallback_used": fallback_used,
+                "latency_ms": latency_ms,
+            }
+        )
 
     if debug_mode and memory_summary:
         ms = memory_summary if len(memory_summary) <= 260 else memory_summary[:260] + "..."
@@ -329,3 +365,18 @@ def get_session_messages(
         offset=offset,
         items=[MessageRead.model_validate(m) for m in rows],
     )
+
+
+@router.get("/debug/traces", response_model=list[TraceItem])
+def get_debug_traces(limit: int = Query(20, ge=1, le=200)):
+    if not _is_debug():
+        raise HTTPException(status_code=404, detail="Not found")
+    return list_traces(limit=limit)
+
+
+@router.delete("/debug/traces")
+def delete_debug_traces():
+    if not _is_debug():
+        raise HTTPException(status_code=404, detail="Not found")
+    clear_traces()
+    return {"ok": True}
