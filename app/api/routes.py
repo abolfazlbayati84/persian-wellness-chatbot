@@ -1,10 +1,12 @@
+import time
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-import time
-import os
 
+from app.core.config import settings
 from app.database.session import get_db
 from app.models.user import User
 from app.models.profile import Profile
@@ -33,9 +35,45 @@ from app.services.trace_store import add_trace, list_traces, clear_traces
 router = APIRouter()
 bearer_scheme = HTTPBearer(auto_error=False)
 
+# single source of truth for which profile fields may enter the prompt
+PROFILE_FIELDS = [
+    "age_range",
+    "sleep_quality",
+    "stress_level",
+    "activity_level",
+    "goal",
+    "notes",
+]
 
-def _is_debug() -> bool:
-    return (os.getenv("DEBUG", "false") or "false").strip().lower() in ("1", "true", "yes", "on")
+HISTORY_LIMIT = 12
+MEMORY_PREVIEW_CHARS = 260
+
+# legacy fallback: only used if llm_client does not report its own metadata
+LLM_ERROR_MARKER = "در ارتباط با مدل مشکلی پیش آمد"
+
+
+def _normalize_llm_result(raw) -> tuple[str, str, str | None]:
+    """
+    Accepts a plain str (current llm_client) or a dict / object exposing
+    .text / .model_path / .model_name (future llm_client). Returns
+    (text, model_path, model_name).
+    """
+    if isinstance(raw, str):
+        text, path, name = raw, None, None
+    elif isinstance(raw, dict):
+        text = raw.get("text") or ""
+        path = raw.get("model_path")
+        name = raw.get("model_name")
+    else:
+        text = getattr(raw, "text", "") or ""
+        path = getattr(raw, "model_path", None)
+        name = getattr(raw, "model_name", None)
+
+    if path not in ("primary", "fallback", "none", "error", "unknown"):
+        # llm_client did not tell us; do NOT guess "primary"/"fallback" from prose.
+        path = "error" if LLM_ERROR_MARKER in text else "unknown"
+
+    return text, path, name
 
 
 def get_current_user(
@@ -156,11 +194,13 @@ def chat_turn(
     current_user: User = Depends(get_current_user),
 ):
     started = time.perf_counter()
-    debug_mode = _is_debug()
+    debug_mode = settings.debug
+    trace_id = str(uuid.uuid4())
 
-    primary_model = (os.getenv("AVAL_MODEL", "gpt-5.4-mini") or "gpt-5.4-mini").strip()
-    fallback_model = (os.getenv("AVAL_FALLBACK_MODEL", "gpt-4.1-mini") or "gpt-4.1-mini").strip()
+    primary_model = settings.aval_model
+    fallback_model = settings.aval_fallback_model
     used_model_path = "none"
+    used_model_name: str | None = None
 
     s = db.get(ChatSession, payload.session_id)
     if not s:
@@ -198,20 +238,22 @@ def chat_turn(
     memory_summary = None
     history_count = 0
     profile_context = None
+    profile_fields_used: list[str] = []
+    fallback_used = False
 
     if risk_tier == "severe":
+        # Crisis path: never call the LLM, always the fixed safety template.
         assistant_text = CRISIS_FA
-        fallback_used = True
         used_model_path = "none"
     else:
         profile = db.query(Profile).filter(Profile.user_id == s.user_id).first()
         profile_parts = []
         if profile:
-            for field in ["age_range", "sleep_quality", "stress_level", "activity_level", "goal", "notes"]:
-                if hasattr(profile, field):
-                    val = getattr(profile, field)
-                    if val not in (None, "", []):
-                        profile_parts.append(f"{field}: {val}")
+            for field in PROFILE_FIELDS:
+                val = getattr(profile, field, None)
+                if val not in (None, "", []):
+                    profile_parts.append(f"{field}: {val}")
+                    profile_fields_used.append(field)
         profile_context = "\n".join(profile_parts) if profile_parts else None
 
         rows = (
@@ -222,7 +264,7 @@ def chat_turn(
                 Message.role.in_(["user", "assistant"]),
             )
             .order_by(Message.created_at.desc(), Message.id.desc())
-            .limit(12)
+            .limit(HISTORY_LIMIT)
             .all()
         )
         rows = list(reversed(rows))
@@ -240,26 +282,22 @@ def chat_turn(
         ]
         memory_summary = build_memory_summary(memory_items)
 
-        llm_text = generate_reply_with_context(
+        raw_result = generate_reply_with_context(
             user_text=payload.user_text,
             profile_context=profile_context,
             history=history,
             memory_summary=memory_summary,
         )
-
-        if "در ارتباط با مدل مشکلی پیش آمد" in llm_text:
-            used_model_path = "fallback"
-        else:
-            used_model_path = "primary"
+        llm_text, used_model_path, used_model_name = _normalize_llm_result(raw_result)
+        fallback_used = used_model_path == "fallback"
 
         if risk_tier == "moderate":
             assistant_text = f"{MODERATE_FA}\n\n{llm_text}"
         else:
             assistant_text = llm_text
 
-        fallback_used = False
-
-    if is_blocked_output(assistant_text):
+    output_blocked = is_blocked_output(assistant_text)
+    if output_blocked:
         assistant_text = BLOCKED_OUTPUT_FA
 
     assistant_msg = Message(
@@ -283,10 +321,15 @@ def chat_turn(
     if debug_mode:
         ms_preview = None
         if memory_summary:
-            ms_preview = memory_summary if len(memory_summary) <= 260 else memory_summary[:260] + "..."
+            ms_preview = (
+                memory_summary
+                if len(memory_summary) <= MEMORY_PREVIEW_CHARS
+                else memory_summary[:MEMORY_PREVIEW_CHARS] + "..."
+            )
 
         add_trace(
             {
+                "trace_id": trace_id,
                 "session_id": s.id,
                 "user_id": current_user.id,
                 "domain_tag": domain_tag,
@@ -296,27 +339,34 @@ def chat_turn(
                 "used_memory_summary": bool(memory_summary),
                 "memory_summary_preview": ms_preview,
                 "used_profile_context": bool(profile_context),
+                "profile_fields_used": profile_fields_used,
+                "retrieved_chunk_ids": [],  # filled in A6
                 "primary_model": primary_model,
                 "fallback_model": fallback_model,
                 "used_model_path": used_model_path,
+                "used_model_name": used_model_name,
                 "fallback_used": fallback_used,
+                "output_blocked": output_blocked,
                 "latency_ms": latency_ms,
             }
         )
 
-    if debug_mode and memory_summary:
-        ms = memory_summary if len(memory_summary) <= 260 else memory_summary[:260] + "..."
-        print(f"[MEMORY DEBUG] session_id={s.id} history_count={history_count} memory_summary={ms}")
+        if memory_summary:
+            print(
+                f"[MEMORY DEBUG] session_id={s.id} history_count={history_count} "
+                f"memory_summary={ms_preview}"
+            )
 
     print(
-        f"[CHAT_TURN] session_id={s.id} domain={domain_tag} "
-        f"risk={risk_tier} session_risk={s.risk_tier} "
-        f"fallback={fallback_used} latency_ms={latency_ms}"
+        f"[CHAT_TURN] trace_id={trace_id} session_id={s.id} domain={domain_tag} "
+        f"risk={risk_tier} session_risk={s.risk_tier} model_path={used_model_path} "
+        f"fallback={fallback_used} blocked={output_blocked} latency_ms={latency_ms}"
     )
 
     return ChatTurnOut(
         user_message=MessageRead.model_validate(user_msg),
         assistant_message=MessageRead.model_validate(assistant_msg),
+        trace_id=trace_id if debug_mode else None,
     )
 
 
@@ -368,15 +418,20 @@ def get_session_messages(
 
 
 @router.get("/debug/traces", response_model=list[TraceItem])
-def get_debug_traces(limit: int = Query(20, ge=1, le=200)):
-    if not _is_debug():
+def get_debug_traces(
+    limit: int = Query(20, ge=1, le=200),
+    current_user: User = Depends(get_current_user),
+):
+    if not settings.debug:
         raise HTTPException(status_code=404, detail="Not found")
-    return list_traces(limit=limit)
+    return list_traces(limit=limit, user_id=current_user.id)
 
 
 @router.delete("/debug/traces")
-def delete_debug_traces():
-    if not _is_debug():
+def delete_debug_traces(current_user: User = Depends(get_current_user)):
+    """Clears in-memory debug traces for the current user. Chat messages in
+    PostgreSQL are NOT affected."""
+    if not settings.debug:
         raise HTTPException(status_code=404, detail="Not found")
-    clear_traces()
+    clear_traces(user_id=current_user.id)
     return {"ok": True}
