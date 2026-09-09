@@ -68,7 +68,7 @@ def _normalize_llm_result(raw) -> tuple[str, str, str | None]:
         path = getattr(raw, "model_path", None)
         name = getattr(raw, "model_name", None)
 
-    if path not in ("primary", "fallback", "none", "error", "unknown"):
+    if path not in ("primary", "fallback", "final_fallback", "none", "error", "unknown"):
         # llm_client did not tell us; do NOT guess "primary"/"fallback" from prose.
         path = "error" if LLM_ERROR_MARKER in text else "unknown"
 
@@ -289,7 +289,7 @@ def chat_turn(
             memory_summary=memory_summary,
         )
         llm_text, used_model_path, used_model_name = _normalize_llm_result(raw_result)
-        fallback_used = used_model_path == "fallback"
+        fallback_used = used_model_path in ("fallback", "final_fallback")
 
         if risk_tier == "moderate":
             assistant_text = f"{MODERATE_FA}\n\n{llm_text}"

@@ -1,3 +1,4 @@
+import re
 import time
 import random
 import httpx
@@ -7,11 +8,23 @@ import os
 load_dotenv()
 
 SYSTEM_PROMPT = (
-    "You are a supportive Persian wellness assistant. "
-    "Respond in Persian. Be empathetic, practical, and concise. "
+    "You are a supportive Persian (Farsi) wellness assistant.\n"
+    "STRICT LANGUAGE RULE: write your ENTIRE reply in fluent, natural Persian only. "
+    "Never switch to English, Korean, Chinese, or any other language, not even for "
+    "single words, unless the user's own message was written in that language. "
+    "Never mix languages within the same sentence.\n"
+    "Be empathetic, practical, and concise. "
     "Do not provide dangerous instructions. "
     "Do not diagnose; suggest general wellbeing steps."
 )
+
+_FORBIDDEN_SCRIPT_RE = re.compile(
+    r"[\uAC00-\uD7A3\u3040-\u30FF\u4E00-\u9FFF\u0400-\u04FF]"
+)
+
+
+def _has_forbidden_script(text: str) -> bool:
+    return bool(_FORBIDDEN_SCRIPT_RE.search(text))
 
 
 def _env():
@@ -22,13 +35,14 @@ def _env():
     fallback_model = (os.getenv("LLM_FALLBACK_MODEL", "nvidia/nemotron-3-super-120b-a12b:free") or "").strip()
     final_fallback_model = (os.getenv("LLM_FINAL_FALLBACK_MODEL", "openrouter/free") or "").strip()
     debug_mode = (os.getenv("DEBUG", "false") or "false").strip().lower() in ("1", "true", "yes", "on")
-    timeout_s = float((os.getenv("LLM_TIMEOUT_SECONDS", "25") or "25").strip())
-    max_429_retries = int((os.getenv("LLM_MAX_429_RETRIES", "2") or "2").strip())
+    timeout_s = float((os.getenv("LLM_TIMEOUT_SECONDS", "20") or "20").strip())
+    total_budget_s = float((os.getenv("LLM_TOTAL_BUDGET_SECONDS", "45") or "45").strip())
+    max_429_retries = int((os.getenv("LLM_MAX_429_RETRIES", "1") or "1").strip())
     site_url = (os.getenv("LLM_SITE_URL", "") or "").strip()
     site_name = (os.getenv("LLM_SITE_NAME", "") or "").strip()
     return (
         provider, api_key, base_url, model, fallback_model, final_fallback_model,
-        debug_mode, timeout_s, max_429_retries, site_url, site_name,
+        debug_mode, timeout_s, total_budget_s, max_429_retries, site_url, site_name,
     )
 
 
@@ -47,12 +61,14 @@ def _chat_completion(
     api_key: str,
     model: str,
     messages: list[dict],
-    timeout_s: float,
     max_429_retries: int,
     debug_mode: bool,
     site_url: str,
     site_name: str,
+    deadline: float,
 ) -> str:
+    """deadline is an absolute time.monotonic() value: this call (including
+    all internal retries/backoffs) will never run past it."""
     url = f"{base_url}/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -68,42 +84,60 @@ def _chat_completion(
         "messages": messages,
         "temperature": 0.7,
     }
-    timeout = httpx.Timeout(connect=10.0, read=timeout_s, write=10.0, pool=10.0)
 
-    with httpx.Client(timeout=timeout) as client:
-        attempt = 0
-        while True:
-            try:
+    attempt = 0
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 1.0:
+            raise TimeoutError(f"global LLM budget exhausted before/while calling {model}")
+
+        # never let a single HTTP call's read-timeout outlive the remaining budget
+        timeout = httpx.Timeout(
+            connect=min(10.0, remaining),
+            read=remaining,
+            write=min(10.0, remaining),
+            pool=min(10.0, remaining),
+        )
+
+        try:
+            with httpx.Client(timeout=timeout) as client:
                 r = client.post(url, headers=headers, json=payload)
-            except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError) as net_err:
-                if attempt == 0:
-                    if debug_mode:
-                        print(f"[LLM DEBUG] network error on {model}, retrying once: {net_err!r}")
-                    time.sleep(1.5)
-                    attempt += 1
-                    continue
-                raise
+        except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError) as net_err:
+            remaining = deadline - time.monotonic()
+            if attempt == 0 and remaining > 3.0:
+                if debug_mode:
+                    print(f"[LLM DEBUG] network error on {model}, retrying once: {net_err!r}")
+                time.sleep(min(1.5, remaining - 1))
+                attempt += 1
+                continue
+            raise
 
-            if r.status_code == 429:
-                if attempt < max_429_retries:
-                    wait = _backoff_seconds(attempt, r.headers.get("retry-after"))
-                    if debug_mode:
-                        print(f"[LLM DEBUG] 429 on {model}, attempt={attempt + 1}, sleeping {wait:.1f}s")
-                    time.sleep(wait)
-                    attempt += 1
-                    continue
-                r.raise_for_status()
-
+        if r.status_code == 429:
+            remaining = deadline - time.monotonic()
+            if attempt < max_429_retries and remaining > 3.0:
+                wait = min(_backoff_seconds(attempt, r.headers.get("retry-after")), remaining - 1)
+                if debug_mode:
+                    print(f"[LLM DEBUG] 429 on {model}, attempt={attempt + 1}, sleeping {wait:.1f}s")
+                time.sleep(max(0.0, wait))
+                attempt += 1
+                continue
             r.raise_for_status()
-            data = r.json()
 
-            choice = data["choices"][0]
-            content = choice.get("message", {}).get("content")
+        r.raise_for_status()
+        data = r.json()
 
-            if not content or not content.strip():
-                raise ValueError(f"empty completion from model={model}, raw={data}")
+        choice = data["choices"][0]
+        content = choice.get("message", {}).get("content")
 
-            return content.strip()
+        if not content or not content.strip():
+            raise ValueError(f"empty completion from model={model}, raw={data}")
+
+        content = content.strip()
+
+        if _has_forbidden_script(content):
+            raise ValueError(f"forbidden non-Persian script detected in output from model={model}")
+
+        return content
 
 
 def _result(text: str, model_path: str, model_name: str | None) -> dict:
@@ -127,7 +161,7 @@ def generate_reply_with_context(
 ) -> dict:
     (
         provider, api_key, base_url, model, fallback_model, final_fallback_model,
-        debug_mode, timeout_s, max_429_retries, site_url, site_name,
+        debug_mode, timeout_s, total_budget_s, max_429_retries, site_url, site_name,
     ) = _env()
 
     if provider == "mock":
@@ -158,8 +192,11 @@ def generate_reply_with_context(
             f"profile_context={'yes' if bool(profile_context) else 'no'} "
             f"memory_summary={'yes' if bool(memory_summary) else 'no'} "
             f"primary_model={model} fallback_model={fallback_model} "
-            f"final_fallback_model={final_fallback_model} timeout_s={timeout_s}"
+            f"final_fallback_model={final_fallback_model} "
+            f"total_budget_s={total_budget_s}"
         )
+
+    deadline = time.monotonic() + total_budget_s
 
     attempts = [
         ("primary", model),
@@ -167,21 +204,25 @@ def generate_reply_with_context(
         ("final_fallback", final_fallback_model),
     ]
 
-    last_err = None
     for path_name, model_name in attempts:
         if not model_name:
             continue
+
+        if time.monotonic() >= deadline - 1.0:
+            print(f"[LLM DEBUG] skipping {path_name} ({model_name}): global budget exhausted")
+            break
+
         t0 = time.perf_counter()
         try:
             out = _chat_completion(
-                base_url, api_key, model_name, messages, timeout_s,
+                base_url, api_key, model_name, messages,
                 max_429_retries, debug_mode, site_url, site_name,
+                deadline=deadline,
             )
             if debug_mode:
                 print(f"[LLM DEBUG] {path_name}_success model={model_name} elapsed_s={time.perf_counter() - t0:.1f}")
             return _result(out, path_name, model_name)
         except Exception as e:
-            last_err = e
             print(f"[LLM ERROR {path_name}] model={model_name} elapsed_s={time.perf_counter() - t0:.1f} err={e!r}")
 
     return _result(

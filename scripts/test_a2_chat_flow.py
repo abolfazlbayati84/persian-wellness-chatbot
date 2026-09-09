@@ -14,7 +14,7 @@ def pp(title, obj):
 
 def post(path, payload, token=None):
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    r = requests.post(f"{BASE_URL}{path}", json=payload, headers=headers, timeout=90)
+    r = requests.post(f"{BASE_URL}{path}", json=payload, headers=headers, timeout=60)
     try:
         data = r.json()
     except Exception:
