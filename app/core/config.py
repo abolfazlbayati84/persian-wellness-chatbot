@@ -16,10 +16,12 @@ class Settings(BaseModel):
 
     database_url: str | None = os.getenv("DATABASE_URL")
 
-    aval_api_key: str | None = os.getenv("AVAL_API_KEY")
-    aval_base_url: str = os.getenv("AVAL_BASE_URL", "https://api.avalai.ir/v1")
-    aval_model: str = os.getenv("AVAL_MODEL", "gpt-5.4-mini")
-    aval_fallback_model: str = os.getenv("AVAL_FALLBACK_MODEL", "gpt-4.1-mini")
+    llm_provider: str = os.getenv("LLM_PROVIDER", "openrouter")
+    llm_api_key: str | None = os.getenv("LLM_API_KEY")
+    llm_base_url: str = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1")
+    llm_model: str = os.getenv("LLM_MODEL", "google/gemma-4-31b-it:free")
+    llm_fallback_model: str = os.getenv("LLM_FALLBACK_MODEL", "nvidia/nemotron-3-super-120b-a12b:free")
+    llm_final_fallback_model: str = os.getenv("LLM_FINAL_FALLBACK_MODEL", "openrouter/free")
 
     # NOTE: security.py still reads these via os.getenv; migrate later if you want.
     secret_key: str | None = os.getenv("SECRET_KEY")

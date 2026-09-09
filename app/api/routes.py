@@ -38,11 +38,10 @@ bearer_scheme = HTTPBearer(auto_error=False)
 # single source of truth for which profile fields may enter the prompt
 PROFILE_FIELDS = [
     "age_range",
-    "sleep_quality",
-    "stress_level",
-    "activity_level",
-    "goal",
-    "notes",
+    "gender",
+    "primary_concerns",
+    "goals",
+    "communication_preferences",
 ]
 
 HISTORY_LIMIT = 12
@@ -197,8 +196,9 @@ def chat_turn(
     debug_mode = settings.debug
     trace_id = str(uuid.uuid4())
 
-    primary_model = settings.aval_model
-    fallback_model = settings.aval_fallback_model
+    primary_model = settings.llm_model
+    fallback_model = settings.llm_fallback_model
+    final_fallback_model = settings.llm_final_fallback_model
     used_model_path = "none"
     used_model_name: str | None = None
 
@@ -343,6 +343,7 @@ def chat_turn(
                 "retrieved_chunk_ids": [],  # filled in A6
                 "primary_model": primary_model,
                 "fallback_model": fallback_model,
+                "final_fallback_model": final_fallback_model,
                 "used_model_path": used_model_path,
                 "used_model_name": used_model_name,
                 "fallback_used": fallback_used,

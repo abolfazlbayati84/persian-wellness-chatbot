@@ -1,27 +1,32 @@
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from openai import OpenAI
 
 from app.core.config import settings
 
 
 def main():
-    if not settings.aval_api_key:
-        raise ValueError("AVAL_API_KEY is missing from your .env file.")
+    if not settings.llm_api_key:
+        raise ValueError("LLM_API_KEY is missing from your .env file.")
 
-    if not settings.aval_base_url:
-        raise ValueError("AVAL_BASE_URL is missing from your .env file.")
+    if not settings.llm_base_url:
+        raise ValueError("LLM_BASE_URL is missing from your .env file.")
 
-    if not settings.aval_model:
-        raise ValueError("AVAL_MODEL is missing from your .env file.")
+    if not settings.llm_model:
+        raise ValueError("LLM_MODEL is missing from your .env file.")
 
     client = OpenAI(
-        api_key=settings.aval_api_key,
-        base_url=settings.aval_base_url,
+        api_key=settings.llm_api_key,
+        base_url=settings.llm_base_url,
     )
 
-    print(f"Testing Aval AI model: {settings.aval_model}\n")
+    print(f"Testing model: {settings.llm_model}\n")
 
     response = client.chat.completions.create(
-        model=settings.aval_model,
+        model=settings.llm_model,
         messages=[
             {
                 "role": "system",
