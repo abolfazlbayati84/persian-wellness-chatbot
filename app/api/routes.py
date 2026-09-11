@@ -30,6 +30,7 @@ from app.services.llm_client import generate_reply_with_context
 from app.services.classifiers import classify_domain, classify_risk, max_risk, is_blocked_output
 from app.services.safety_templates import CRISIS_FA, MODERATE_FA, BLOCKED_OUTPUT_FA
 from app.services.memory_service import build_memory_summary
+from app.services.kb_retrieval import retrieve_relevant_chunks
 from app.services.trace_store import add_trace, list_traces, clear_traces
 
 router = APIRouter()
@@ -208,7 +209,8 @@ def chat_turn(
     if s.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    domain_tag = classify_domain(payload.user_text)
+    raw_domain_tag = classify_domain(payload.user_text)
+    domain_tag = raw_domain_tag
     risk_tier = classify_risk(payload.user_text)
 
     if domain_tag == "other":
@@ -240,6 +242,7 @@ def chat_turn(
     profile_context = None
     profile_fields_used: list[str] = []
     fallback_used = False
+    retrieved_chunk_ids: list[int] = []
 
     if risk_tier == "severe":
         # Crisis path: never call the LLM, always the fixed safety template.
@@ -282,11 +285,25 @@ def chat_turn(
         ]
         memory_summary = build_memory_summary(memory_items)
 
+        # Use the message's own raw classification for KB filtering, not the
+        # conversational domain_tag (which can be "inherited" from a previous
+        # message when this one is topically ambiguous) -- otherwise an
+        # unrelated message right after a depression-tagged one would wrongly
+        # pull depression-specific content into the prompt.
+        retrieved_chunks = retrieve_relevant_chunks(db, payload.user_text, raw_domain_tag)
+        retrieved_chunk_ids = [c["id"] for c in retrieved_chunks]
+        kb_context = (
+            "\n\n".join(f"[{c['title']}] {c['chunk_text']}" for c in retrieved_chunks)
+            if retrieved_chunks
+            else None
+        )
+
         raw_result = generate_reply_with_context(
             user_text=payload.user_text,
             profile_context=profile_context,
             history=history,
             memory_summary=memory_summary,
+            kb_context=kb_context,
         )
         llm_text, used_model_path, used_model_name = _normalize_llm_result(raw_result)
         fallback_used = used_model_path in ("fallback", "final_fallback")
@@ -332,6 +349,7 @@ def chat_turn(
                 "trace_id": trace_id,
                 "session_id": s.id,
                 "user_id": current_user.id,
+                "user_text_preview": payload.user_text[:120],
                 "domain_tag": domain_tag,
                 "risk_tier": risk_tier,
                 "session_risk_tier": s.risk_tier,
@@ -340,7 +358,7 @@ def chat_turn(
                 "memory_summary_preview": ms_preview,
                 "used_profile_context": bool(profile_context),
                 "profile_fields_used": profile_fields_used,
-                "retrieved_chunk_ids": [],  # filled in A6
+                "retrieved_chunk_ids": retrieved_chunk_ids,
                 "primary_model": primary_model,
                 "fallback_model": fallback_model,
                 "final_fallback_model": final_fallback_model,

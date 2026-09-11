@@ -4,7 +4,10 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-DomainTag = Literal["stress", "sleep", "anxiety", "depression", "burnout", "other"]
+DomainTag = Literal[
+    "stress", "sleep", "anxiety", "depression", "burnout",
+    "relationships", "self_esteem", "study", "other",
+]
 RiskTier = Literal["none", "low", "moderate", "severe"]
 
 
@@ -29,21 +32,43 @@ def classify_domain(text: str) -> DomainTag:
     ]
     stress_kw = [
         "استرس", "تنش", "فشار", "overwhelmed", "stress", "under pressure",
+        "تحت فشارم", "کلافه", "کلافه‌ام",
     ]
     anxiety_kw = [
-        "اضطراب", "نگرانی", "دلشوره", "دل‌شوره", "وحشت", "پنیک",
+        "اضطراب", "مضطرب", "نگرانی", "نگرانم", "دلشوره", "دل‌شوره", "وحشت", "پنیک",
         "anxiety", "panic", "panic attack", "restless",
+        "دلواپس", "پریشون", "پریشان", "قلبم تند می‌زنه", "قلبم تند میزنه",
     ]
     depression_kw = [
-        "افسرده", "افسردگی", "غمگین", "بی انگیزه", "بی‌انگیزه", "ناامید",
-        "depress", "depression", "hopeless", "worthless",
+        "افسرده", "افسردگی", "غمگین", "بی انگیزه", "بی‌انگیزه", "انگیزه ندارم",
+        "ناامید", "depress", "depression", "hopeless", "worthless",
+        "بی‌حوصله", "بی حوصله", "حوصله ندارم", "دلمرده", "پوچ", "پوچی",
     ]
     burnout_kw = [
         "فرسودگی", "فرسوده", "فرسودم", "خسته از کار", "بی‌رمق", "تحلیل رفتم",
-        "burnout", "burned out", "work exhaustion",
+        "burnout", "burned out", "work exhaustion", "طاقت ندارم", "دیگه نمی‌کشم",
+    ]
+    relationships_kw = [
+        "دوستم", "رابطه‌ام", "رابطه‌مون", "با همسرم", "با شریکم", "با پارتنرم",
+        "دعوا کردیم", "قهر کردیم", "بهش بگم", "بهش چی بگم", "چطور بهش بگم",
+        "تنها احساس می‌کنم", "کسی رو ندارم که", "خانواده‌ام", "با مامانم", "با بابام",
+        "relationship", "argument with", "breakup", "my partner", "my friend",
+    ]
+    self_esteem_kw = [
+        "اعتماد به نفس ندارم", "اعتماد به نفسم", "خودم رو دوست ندارم",
+        "احساس بی‌ارزشی می‌کنم", "به خودم شک دارم", "خودباوری ندارم",
+        "self esteem", "self-esteem", "insecure about myself",
+    ]
+    study_kw = [
+        "امتحان", "پایان‌نامه", "تکلیف", "مطالعه درس", "تمرکز روی درس",
+        "تعلل می‌کنم", "procrastinat", "پروژه دانشگاه", "کنکور", "مدیریت زمان",
+        "زمان‌بندی درس", "برنامه مطالعه",
     ]
 
-    # priority order to reduce false-other
+    # priority order to reduce false-other; more specific/compound phrases
+    # (relationships/self_esteem/study) sit after the original emotional
+    # categories so an existing message like "انگیزه ندارم درسمو بخونم"
+    # still classifies as depression (motivation), not study.
     if _contains_any(t, sleep_kw):
         return "sleep"
     if _contains_any(t, anxiety_kw):
@@ -52,6 +77,12 @@ def classify_domain(text: str) -> DomainTag:
         return "depression"
     if _contains_any(t, burnout_kw):
         return "burnout"
+    if _contains_any(t, relationships_kw):
+        return "relationships"
+    if _contains_any(t, self_esteem_kw):
+        return "self_esteem"
+    if _contains_any(t, study_kw):
+        return "study"
     if _contains_any(t, stress_kw):
         return "stress"
 
@@ -115,7 +146,7 @@ BLOCKED_OUTPUT_PATTERNS = [
     r"چطور خودمو بکشم",
     r"دوز\s*دارو",
     r"overdose",
-    r"\bOD\b",          # now actually reachable (IGNORECASE, no .lower())
+    r"\bOD\b",
     r"راهنمای آسیب به خود",
 ]
 

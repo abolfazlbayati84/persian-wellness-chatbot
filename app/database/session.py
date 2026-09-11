@@ -15,7 +15,12 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL is missing from the .env file.")
 
-engine = create_engine(DATABASE_URL, echo=False)
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_pre_ping=True,   # check the connection is alive before using it
+    pool_recycle=280,     # proactively recycle before Neon's idle timeout
+)
 
 SessionLocal = sessionmaker(
     autocommit=False,

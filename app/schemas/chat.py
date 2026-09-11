@@ -2,7 +2,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, Literal
 
-ModelPath = Literal["primary", "fallback", "none", "error", "unknown"]
+ModelPath = Literal["primary", "fallback", "final_fallback", "none", "error", "unknown"]
 
 
 class ChatTurnIn(BaseModel):
@@ -32,6 +32,7 @@ class TraceItem(BaseModel):
     trace_id: Optional[str] = None
     session_id: int
     user_id: int
+    user_text_preview: Optional[str] = None
     domain_tag: str
     risk_tier: str
     session_risk_tier: Optional[str] = None
@@ -43,11 +44,11 @@ class TraceItem(BaseModel):
     used_profile_context: bool
     profile_fields_used: list[str] = Field(default_factory=list)
 
-    # placeholder for A6 (RAG) so the trace shape stays stable
     retrieved_chunk_ids: list[int] = Field(default_factory=list)
 
     primary_model: Optional[str] = None
     fallback_model: Optional[str] = None
+    final_fallback_model: Optional[str] = None
     used_model_path: ModelPath = "none"
     used_model_name: Optional[str] = None
 

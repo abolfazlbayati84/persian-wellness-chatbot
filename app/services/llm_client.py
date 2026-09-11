@@ -158,6 +158,7 @@ def generate_reply_with_context(
     profile_context: str | None,
     history: list[dict],
     memory_summary: str | None = None,
+    kb_context: str | None = None,
 ) -> dict:
     (
         provider, api_key, base_url, model, fallback_model, final_fallback_model,
@@ -181,6 +182,19 @@ def generate_reply_with_context(
 
     if memory_summary:
         messages.append({"role": "system", "content": memory_summary})
+
+    if kb_context:
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                        "Relevant reference material (validated psychoeducational content). "
+                        "Draw on this when it fits the user's message; put it in your own "
+                        "natural, empathetic Persian words, don't copy it verbatim, and don't "
+                        "mention that you're using 'reference material':\n" + kb_context
+                ),
+            }
+        )
 
     messages.extend(history)
     messages.append({"role": "user", "content": user_text})
