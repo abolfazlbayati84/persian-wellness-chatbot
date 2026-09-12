@@ -3,3 +3,4 @@ from app.models.profile import Profile
 from app.models.session import Session
 from app.models.message import Message
 from app.models.kb_document import KBDocument
+from app.models.risk_event import RiskEvent

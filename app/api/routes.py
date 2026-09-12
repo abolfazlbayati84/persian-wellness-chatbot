@@ -1,5 +1,6 @@
 import time
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -12,11 +13,13 @@ from app.models.user import User
 from app.models.profile import Profile
 from app.models.session import Session as ChatSession
 from app.models.message import Message
+from app.models.risk_event import RiskEvent
 
 from app.schemas.user import UserCreate, UserRead
 from app.schemas.profile import ProfileUpsert, ProfileRead
 from app.schemas.session import SessionCreate, SessionRead, SessionMessagesOut
 from app.schemas.chat import ChatTurnIn, ChatTurnOut, MessageRead, TraceItem
+from app.schemas.risk_event import RiskEventRead, RiskEventReviewIn
 from app.schemas.auth import LoginIn, TokenOut
 
 from app.core.security import (
@@ -237,6 +240,18 @@ def chat_turn(
     db.add(user_msg)
     db.flush()
 
+    if risk_tier in ("moderate", "severe"):
+        db.add(
+            RiskEvent(
+                user_id=current_user.id,
+                session_id=s.id,
+                message_id=user_msg.id,
+                risk_tier=risk_tier,
+                domain_tag=domain_tag,
+                user_text_snapshot=payload.user_text,
+            )
+        )
+
     memory_summary = None
     history_count = 0
     profile_context = None
@@ -454,3 +469,49 @@ def delete_debug_traces(current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Not found")
     clear_traces(user_id=current_user.id)
     return {"ok": True}
+
+def get_current_admin_user(current_user: User = Depends(get_current_user)) -> User:
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
+
+@router.get("/admin/risk-events", response_model=list[RiskEventRead])
+def list_risk_events(
+    status: str | None = Query(None, description="Filter by status: pending | reviewed | dismissed"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user),
+):
+    q = db.query(RiskEvent)
+    if status:
+        q = q.filter(RiskEvent.status == status)
+    rows = (
+        q.order_by(RiskEvent.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return rows
+
+
+@router.patch("/admin/risk-events/{risk_event_id}", response_model=RiskEventRead)
+def review_risk_event(
+    risk_event_id: int,
+    payload: RiskEventReviewIn,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user),
+):
+    event = db.get(RiskEvent, risk_event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Risk event not found")
+
+    event.status = payload.status
+    event.reviewer_note = payload.reviewer_note
+    event.reviewed_by_user_id = admin.id
+    event.reviewed_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(event)
+    return event
