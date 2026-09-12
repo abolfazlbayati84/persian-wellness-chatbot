@@ -14,6 +14,7 @@ from app.models.profile import Profile
 from app.models.session import Session as ChatSession
 from app.models.message import Message
 from app.models.risk_event import RiskEvent
+from app.models.episodic_summary import EpisodicSummary
 
 from app.schemas.user import UserCreate, UserRead
 from app.schemas.profile import ProfileUpsert, ProfileRead
@@ -29,7 +30,7 @@ from app.core.security import (
     decode_access_token,
 )
 
-from app.services.llm_client import generate_reply_with_context
+from app.services.llm_client import generate_reply_with_context, summarize_conversation
 from app.services.classifiers import classify_domain, classify_risk, max_risk, is_blocked_output
 from app.services.safety_templates import CRISIS_FA, MODERATE_FA, BLOCKED_OUTPUT_FA
 from app.services.memory_service import build_memory_summary
@@ -189,6 +190,45 @@ def create_session(
     db.refresh(s)
     return s
 
+@router.post("/sessions/{session_id}/end", response_model=SessionRead)
+def end_session(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    s = db.get(ChatSession, session_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if s.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if s.ended_at is not None:
+        raise HTTPException(status_code=400, detail="Session already ended")
+
+    rows = (
+        db.query(Message)
+        .filter(Message.session_id == s.id, Message.role.in_(["user", "assistant"]))
+        .order_by(Message.created_at.asc(), Message.id.asc())
+        .all()
+    )
+
+    if rows:
+        transcript = "\n".join(f"{m.role}: {m.content}" for m in rows)
+        result = summarize_conversation(transcript)
+        summary_text = (result.get("text") or "").strip()
+        if summary_text and not summary_text.startswith("متأسفم"):
+            db.add(
+                EpisodicSummary(
+                    user_id=current_user.id,
+                    session_id=s.id,
+                    summary_text=summary_text,
+                )
+            )
+
+    s.ended_at = datetime.utcnow()
+    db.commit()
+    db.refresh(s)
+    return s
+
 
 @router.post("/chat/turn", response_model=ChatTurnOut)
 def chat_turn(
@@ -300,11 +340,19 @@ def chat_turn(
         ]
         memory_summary = build_memory_summary(memory_items)
 
-        # Use the message's own raw classification for KB filtering, not the
-        # conversational domain_tag (which can be "inherited" from a previous
-        # message when this one is topically ambiguous) -- otherwise an
-        # unrelated message right after a depression-tagged one would wrongly
-        # pull depression-specific content into the prompt.
+        recent_summaries = (
+            db.query(EpisodicSummary)
+            .filter(EpisodicSummary.user_id == s.user_id)
+            .order_by(EpisodicSummary.created_at.desc())
+            .limit(3)
+            .all()
+        )
+        if recent_summaries:
+            long_term_text = "\n\n".join(
+                f"[خلاصه‌ی گفتگوی قبلی] {e.summary_text}" for e in reversed(recent_summaries)
+            )
+            memory_summary = f"{long_term_text}\n\n{memory_summary}" if memory_summary else long_term_text
+
         retrieved_chunks = retrieve_relevant_chunks(db, payload.user_text, raw_domain_tag)
         retrieved_chunk_ids = [c["id"] for c in retrieved_chunks]
         kb_context = (

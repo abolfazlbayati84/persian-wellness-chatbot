@@ -18,6 +18,19 @@ SYSTEM_PROMPT = (
     "Do not diagnose; suggest general wellbeing steps."
 )
 
+SUMMARY_SYSTEM_PROMPT = (
+    "You are a clinical documentation assistant. Given a transcript of a "
+    "conversation between a user and a supportive Persian wellness chatbot, "
+    "write a concise summary IN PERSIAN (under 150 words) covering exactly "
+    "these four points, each as a short line:\n"
+    "۱) دغدغه‌های اصلی که کاربر مطرح کرد\n"
+    "۲) تکنیک‌ها یا پیشنهادهایی که به کاربر ارائه شد\n"
+    "۳) اگر قدم عملی/تکلیف مشخصی توافق شد، چه بود\n"
+    "۴) روند احساسی کاربر در طول گفتگو (بهتر شد، بدتر شد، بدون تغییر)\n"
+    "Do not add commentary, disclaimers, or anything outside these four "
+    "points. Do not include the assistant's exact wording, only facts."
+)
+
 _FORBIDDEN_SCRIPT_RE = re.compile(
     r"[\uAC00-\uD7A3\u3040-\u30FF\u4E00-\u9FFF\u0400-\u04FF]"
 )
@@ -35,14 +48,13 @@ def _env():
     fallback_model = (os.getenv("LLM_FALLBACK_MODEL", "nvidia/nemotron-3-super-120b-a12b:free") or "").strip()
     final_fallback_model = (os.getenv("LLM_FINAL_FALLBACK_MODEL", "openrouter/free") or "").strip()
     debug_mode = (os.getenv("DEBUG", "false") or "false").strip().lower() in ("1", "true", "yes", "on")
-    timeout_s = float((os.getenv("LLM_TIMEOUT_SECONDS", "20") or "20").strip())
     total_budget_s = float((os.getenv("LLM_TOTAL_BUDGET_SECONDS", "45") or "45").strip())
     max_429_retries = int((os.getenv("LLM_MAX_429_RETRIES", "1") or "1").strip())
     site_url = (os.getenv("LLM_SITE_URL", "") or "").strip()
     site_name = (os.getenv("LLM_SITE_NAME", "") or "").strip()
     return (
         provider, api_key, base_url, model, fallback_model, final_fallback_model,
-        debug_mode, timeout_s, total_budget_s, max_429_retries, site_url, site_name,
+        debug_mode, total_budget_s, max_429_retries, site_url, site_name,
     )
 
 
@@ -91,7 +103,6 @@ def _chat_completion(
         if remaining <= 1.0:
             raise TimeoutError(f"global LLM budget exhausted before/while calling {model}")
 
-        # never let a single HTTP call's read-timeout outlive the remaining budget
         timeout = httpx.Timeout(
             connect=min(10.0, remaining),
             read=remaining,
@@ -144,6 +155,57 @@ def _result(text: str, model_path: str, model_name: str | None) -> dict:
     return {"text": text, "model_path": model_path, "model_name": model_name}
 
 
+def _run_cascade(messages: list[dict], log_prefix: str = "LLM") -> dict:
+    """Shared primary/fallback/final_fallback cascade with a hard total time
+    budget. Used by both user-facing chat replies and background
+    summarization -- one place owns retry/timeout/fallback behavior."""
+    (
+        provider, api_key, base_url, model, fallback_model, final_fallback_model,
+        debug_mode, total_budget_s, max_429_retries, site_url, site_name,
+    ) = _env()
+
+    if provider == "mock":
+        return _result(f"Received: {messages[-1]['content']}", "none", None)
+
+    if not api_key:
+        if debug_mode:
+            print(f"[{log_prefix} DEBUG] missing API key")
+        return _result("کلید API تنظیم نشده است.", "error", None)
+
+    deadline = time.monotonic() + total_budget_s
+    attempts = [
+        ("primary", model),
+        ("fallback", fallback_model),
+        ("final_fallback", final_fallback_model),
+    ]
+
+    for path_name, model_name_ in attempts:
+        if not model_name_:
+            continue
+        if time.monotonic() >= deadline - 1.0:
+            print(f"[{log_prefix} DEBUG] skipping {path_name} ({model_name_}): global budget exhausted")
+            break
+
+        t0 = time.perf_counter()
+        try:
+            out = _chat_completion(
+                base_url, api_key, model_name_, messages,
+                max_429_retries, debug_mode, site_url, site_name,
+                deadline=deadline,
+            )
+            if debug_mode:
+                print(f"[{log_prefix} DEBUG] {path_name}_success model={model_name_} elapsed_s={time.perf_counter() - t0:.1f}")
+            return _result(out, path_name, model_name_)
+        except Exception as e:
+            print(f"[{log_prefix} ERROR {path_name}] model={model_name_} elapsed_s={time.perf_counter() - t0:.1f} err={e!r}")
+
+    return _result(
+        "متأسفم، در ارتباط با مدل مشکلی پیش آمد. لطفاً دوباره تلاش کن.",
+        "error",
+        None,
+    )
+
+
 def generate_reply(user_text: str) -> dict:
     return generate_reply_with_context(
         user_text=user_text,
@@ -160,20 +222,7 @@ def generate_reply_with_context(
     memory_summary: str | None = None,
     kb_context: str | None = None,
 ) -> dict:
-    (
-        provider, api_key, base_url, model, fallback_model, final_fallback_model,
-        debug_mode, timeout_s, total_budget_s, max_429_retries, site_url, site_name,
-    ) = _env()
-
-    if provider == "mock":
-        if debug_mode:
-            print("[LLM DEBUG] provider=mock used")
-        return _result(f"Received: {user_text}", "none", None)
-
-    if not api_key:
-        if debug_mode:
-            print("[LLM DEBUG] missing API key")
-        return _result("کلید API تنظیم نشده است.", "error", None)
+    debug_mode = (os.getenv("DEBUG", "false") or "false").strip().lower() in ("1", "true", "yes", "on")
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
@@ -188,10 +237,10 @@ def generate_reply_with_context(
             {
                 "role": "system",
                 "content": (
-                        "Relevant reference material (validated psychoeducational content). "
-                        "Draw on this when it fits the user's message; put it in your own "
-                        "natural, empathetic Persian words, don't copy it verbatim, and don't "
-                        "mention that you're using 'reference material':\n" + kb_context
+                    "Relevant reference material (validated psychoeducational content). "
+                    "Draw on this when it fits the user's message; put it in your own "
+                    "natural, empathetic Persian words, don't copy it verbatim, and don't "
+                    "mention that you're using 'reference material':\n" + kb_context
                 ),
             }
         )
@@ -205,42 +254,17 @@ def generate_reply_with_context(
             f"history_count={len(history)} "
             f"profile_context={'yes' if bool(profile_context) else 'no'} "
             f"memory_summary={'yes' if bool(memory_summary) else 'no'} "
-            f"primary_model={model} fallback_model={fallback_model} "
-            f"final_fallback_model={final_fallback_model} "
-            f"total_budget_s={total_budget_s}"
+            f"kb_context={'yes' if bool(kb_context) else 'no'}"
         )
 
-    deadline = time.monotonic() + total_budget_s
+    return _run_cascade(messages, log_prefix="LLM")
 
-    attempts = [
-        ("primary", model),
-        ("fallback", fallback_model),
-        ("final_fallback", final_fallback_model),
+
+def summarize_conversation(transcript_text: str) -> dict:
+    """Generate a short structured Persian summary of a finished session's
+    transcript, for persistent episodic memory (design doc section 4.2)."""
+    messages = [
+        {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
+        {"role": "user", "content": transcript_text[:6000]},  # keep prompt size bounded
     ]
-
-    for path_name, model_name in attempts:
-        if not model_name:
-            continue
-
-        if time.monotonic() >= deadline - 1.0:
-            print(f"[LLM DEBUG] skipping {path_name} ({model_name}): global budget exhausted")
-            break
-
-        t0 = time.perf_counter()
-        try:
-            out = _chat_completion(
-                base_url, api_key, model_name, messages,
-                max_429_retries, debug_mode, site_url, site_name,
-                deadline=deadline,
-            )
-            if debug_mode:
-                print(f"[LLM DEBUG] {path_name}_success model={model_name} elapsed_s={time.perf_counter() - t0:.1f}")
-            return _result(out, path_name, model_name)
-        except Exception as e:
-            print(f"[LLM ERROR {path_name}] model={model_name} elapsed_s={time.perf_counter() - t0:.1f} err={e!r}")
-
-    return _result(
-        "متأسفم، در ارتباط با مدل مشکلی پیش آمد. لطفاً دوباره تلاش کن.",
-        "error",
-        None,
-    )
+    return _run_cascade(messages, log_prefix="SUMMARY")
