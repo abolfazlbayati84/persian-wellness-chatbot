@@ -35,9 +35,27 @@ _FORBIDDEN_SCRIPT_RE = re.compile(
     r"[\uAC00-\uD7A3\u3040-\u30FF\u4E00-\u9FFF\u0400-\u04FF]"
 )
 
+# Some models (notably Gemma 4's "thinking" mode, see
+# github.com/google-gemini/cookbook/issues/1198) leak their internal
+# reasoning/self-critique into the visible answer even when thinking is
+# requested off. Treat any of these tell-tale English markers as a bad
+# generation -- fail it like any other error so the cascade moves on to
+# the next model instead of showing this to a real user.
+_LEAKED_REASONING_MARKERS = re.compile(
+    r"(self-correction|confidence score|constraint checklist|double checking rules?|"
+    r"final response construction|final polish|wait,? i need to|revised plan:|"
+    r"let me reconsider|draft response|language check:|tone check:|safety check:|"
+    r"content check:|refined text construction)",
+    re.IGNORECASE,
+)
+
 
 def _has_forbidden_script(text: str) -> bool:
     return bool(_FORBIDDEN_SCRIPT_RE.search(text))
+
+
+def _has_leaked_reasoning(text: str) -> bool:
+    return bool(_LEAKED_REASONING_MARKERS.search(text))
 
 
 def _env():
@@ -145,16 +163,15 @@ def _chat_completion(
         choice = data["choices"][0]
         content = choice.get("message", {}).get("content")
 
-        if not content or not content.strip():
-            raise ValueError(f"empty completion from model={model}, raw={data}")
         content = content.strip()
         if _has_forbidden_script(content):
             raise ValueError(f"forbidden non-Persian script detected in output from model={model}")
+        if _has_leaked_reasoning(content):
+            raise ValueError(f"leaked chain-of-thought reasoning detected in output from model={model}")
         return content
 
-
 # ---------------------------------------------------------------------------
-# Google Generative Language API path (direct Gemma/Gemini access)
+# Google Generative Language API path
 # ---------------------------------------------------------------------------
 
 def _messages_to_google_format(messages: list[dict]) -> tuple[str | None, list[dict]]:
@@ -240,6 +257,8 @@ def _google_generate_content(
             raise ValueError(f"empty completion from model={model}")
         if _has_forbidden_script(content):
             raise ValueError(f"forbidden non-Persian script detected in output from model={model}")
+        if _has_leaked_reasoning(content):
+            raise ValueError(f"leaked chain-of-thought reasoning detected in output from model={model}")
         return content
 
 
