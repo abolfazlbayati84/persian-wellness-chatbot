@@ -65,10 +65,6 @@ def classify_domain(text: str) -> DomainTag:
         "زمان‌بندی درس", "برنامه مطالعه",
     ]
 
-    # priority order to reduce false-other; more specific/compound phrases
-    # (relationships/self_esteem/study) sit after the original emotional
-    # categories so an existing message like "انگیزه ندارم درسمو بخونم"
-    # still classifies as depression (motivation), not study.
     if _contains_any(t, sleep_kw):
         return "sleep"
     if _contains_any(t, anxiety_kw):
@@ -90,6 +86,7 @@ def classify_domain(text: str) -> DomainTag:
 
 
 SEVERE_PATTERNS = [
+    # direct
     r"خودکشی",
     r"می.?خوام خودمو بکشم",
     r"می.?خوام به زندگیم پایان بدم",
@@ -100,6 +97,19 @@ SEVERE_PATTERNS = [
     r"kill myself",
     r"end my life",
     r"self[- ]?harm",
+    # indirect / idiomatic -- design doc 10.4: real disclosures are often
+    # NOT literal. Deliberately high-recall (a false positive here just
+    # shows a calm safety message; a false negative could miss a real crisis).
+    r"کاش.*به دنیا نمی.?اومدم",
+    r"کاش.*هیچ.?وقت.*متولد نمی.?شدم",
+    r"دیگه دلیلی (ندارم|نمی.?بینم).*ادامه",
+    r"دلیلی برای زندگی ندارم",
+    r"می.?خوام همه چی(ز)? تموم بشه",
+    r"نقشه.*(پایان بدم|بکشمش|خودمو بکشم|بمیرم)",
+    r"دارم نقشه می.?کشم.*(زندگی|خودم|پایان)",
+    r"طاقت این زندگی رو ندارم",
+    r"دیگه جایی برای من نیست",
+    r"بهتره من نباشم",
 ]
 
 MODERATE_PATTERNS = [
@@ -117,6 +127,7 @@ LOW_PATTERNS = [
     r"اضطراب",
     r"نگران",
     r"بی.?خواب",
+    r"بد.?خواب",
     r"خسته",
     r"تمرکز ندارم",
     r"دلشوره",
