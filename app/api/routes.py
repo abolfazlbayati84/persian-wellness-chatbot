@@ -15,6 +15,7 @@ from app.models.session import Session as ChatSession
 from app.models.message import Message
 from app.models.risk_event import RiskEvent
 from app.models.episodic_summary import EpisodicSummary
+from app.models.tree_progress import TreeProgress
 
 from app.schemas.user import UserCreate, UserRead
 from app.schemas.profile import ProfileUpsert, ProfileRead
@@ -34,7 +35,8 @@ from app.services.llm_client import generate_reply_with_context, summarize_conve
 from app.services.classifiers import classify_domain, classify_risk, max_risk, is_blocked_output
 from app.services.safety_templates import CRISIS_FA, MODERATE_FA, BLOCKED_OUTPUT_FA
 from app.services.memory_service import build_memory_summary
-from app.services.kb_retrieval import retrieve_relevant_chunks
+from app.services.kb_retrieval import retrieve_relevant_chunks, CLASSIFIER_TO_KB_DOMAIN
+from app.services.decision_tree import get_tree, get_node, classify_branch, run_tree_node
 from app.services.trace_store import add_trace, list_traces, clear_traces
 
 router = APIRouter()
@@ -190,6 +192,7 @@ def create_session(
     db.refresh(s)
     return s
 
+
 @router.post("/sessions/{session_id}/end", response_model=SessionRead)
 def end_session(
     session_id: int,
@@ -298,11 +301,20 @@ def chat_turn(
     profile_fields_used: list[str] = []
     fallback_used = False
     retrieved_chunk_ids: list[int] = []
+    tree_node_used: str | None = None
 
     if risk_tier == "severe":
-        # Crisis path: never call the LLM, always the fixed safety template.
         assistant_text = CRISIS_FA
         used_model_path = "none"
+
+        active_tree = (
+            db.query(TreeProgress)
+            .filter(TreeProgress.session_id == s.id, TreeProgress.status == "active")
+            .first()
+        )
+        if active_tree:
+            active_tree.status = "abandoned"
+
     else:
         profile = db.query(Profile).filter(Profile.user_id == s.user_id).first()
         profile_parts = []
@@ -330,12 +342,7 @@ def chat_turn(
         history_count = len(history)
 
         memory_items = [
-            {
-                "role": m.role,
-                "content": m.content,
-                "risk_tier": m.risk_tier,
-                "domain_tag": m.domain_tag,
-            }
+            {"role": m.role, "content": m.content, "risk_tier": m.risk_tier, "domain_tag": m.domain_tag}
             for m in rows
         ]
         memory_summary = build_memory_summary(memory_items)
@@ -353,28 +360,125 @@ def chat_turn(
             )
             memory_summary = f"{long_term_text}\n\n{memory_summary}" if memory_summary else long_term_text
 
-        retrieved_chunks = retrieve_relevant_chunks(db, payload.user_text, raw_domain_tag)
-        retrieved_chunk_ids = [c["id"] for c in retrieved_chunks]
-        kb_context = (
-            "\n\n".join(f"[{c['title']}] {c['chunk_text']}" for c in retrieved_chunks)
-            if retrieved_chunks
-            else None
-        )
+        tree_handled = False
 
-        raw_result = generate_reply_with_context(
-            user_text=payload.user_text,
-            profile_context=profile_context,
-            history=history,
-            memory_summary=memory_summary,
-            kb_context=kb_context,
-        )
-        llm_text, used_model_path, used_model_name = _normalize_llm_result(raw_result)
-        fallback_used = used_model_path in ("fallback", "final_fallback")
-
+        # Safety override: an active tree never survives into a moderate turn.
         if risk_tier == "moderate":
-            assistant_text = f"{MODERATE_FA}\n\n{llm_text}"
-        else:
-            assistant_text = llm_text
+            active_tree = (
+                db.query(TreeProgress)
+                .filter(TreeProgress.session_id == s.id, TreeProgress.status == "active")
+                .first()
+            )
+            if active_tree:
+                active_tree.status = "abandoned"
+
+        if risk_tier in ("none", "low"):
+            active_tree = (
+                db.query(TreeProgress)
+                .filter(TreeProgress.session_id == s.id, TreeProgress.status == "active")
+                .first()
+            )
+
+            tree_def = get_tree(active_tree.domain) if active_tree else None
+            if active_tree and tree_def is None:
+                active_tree.status = "abandoned"
+                active_tree = None
+
+            if not active_tree:
+                mapped_tree_domain = CLASSIFIER_TO_KB_DOMAIN.get(raw_domain_tag)
+                candidate_tree = get_tree(mapped_tree_domain) if mapped_tree_domain else None
+                if candidate_tree:
+                    active_tree = TreeProgress(
+                        session_id=s.id,
+                        user_id=s.user_id,
+                        domain=mapped_tree_domain,
+                        current_node_id=candidate_tree["root"],
+                        status="active",
+                        unclear_count=0,
+                        visited_nodes=[],
+                    )
+                    db.add(active_tree)
+                    db.flush()
+                    tree_def = candidate_tree
+
+                    raw_result, resting_node_id, technique_ids_used = run_tree_node(
+                        active_tree.current_node_id, tree_def, db,
+                        payload.user_text, profile_context, history, memory_summary,
+                    )
+                    llm_text, used_model_path, used_model_name = _normalize_llm_result(raw_result)
+                    assistant_text = llm_text
+                    active_tree.current_node_id = resting_node_id
+                    tree_node_used = resting_node_id
+                    retrieved_chunk_ids = technique_ids_used
+                    if get_node(tree_def, resting_node_id)["type"] == "end":
+                        active_tree.status = "completed"
+                    tree_handled = True
+
+            if active_tree and tree_def and not tree_handled:
+                current_node = get_node(tree_def, active_tree.current_node_id)
+                if current_node.get("type") == "question":
+                    branch_keys = list(current_node["branches"].keys())
+                    branch = classify_branch(current_node["prompt_to_user"], payload.user_text, branch_keys)
+
+                    if branch == "unclear":
+                        active_tree.unclear_count += 1
+                        max_unclear = tree_def.get("max_unclear_before_abandon", 2)
+                        if active_tree.unclear_count >= max_unclear:
+                            active_tree.status = "abandoned"
+                        else:
+                            raw_result, resting_node_id, technique_ids_used = run_tree_node(
+                                active_tree.current_node_id, tree_def, db,
+                                payload.user_text, profile_context, history, memory_summary,
+                                clarify=True,
+                            )
+                            llm_text, used_model_path, used_model_name = _normalize_llm_result(raw_result)
+                            assistant_text = llm_text
+                            tree_node_used = resting_node_id
+                            retrieved_chunk_ids = technique_ids_used
+                            tree_handled = True
+                    else:
+                        active_tree.unclear_count = 0
+                        active_tree.visited_nodes = (active_tree.visited_nodes or []) + [
+                            {"node": active_tree.current_node_id, "branch": branch}
+                        ]
+                        next_node_id = current_node["branches"][branch]
+                        raw_result, resting_node_id, technique_ids_used = run_tree_node(
+                            next_node_id, tree_def, db,
+                            payload.user_text, profile_context, history, memory_summary,
+                        )
+                        llm_text, used_model_path, used_model_name = _normalize_llm_result(raw_result)
+                        assistant_text = llm_text
+                        active_tree.current_node_id = resting_node_id
+                        tree_node_used = resting_node_id
+                        retrieved_chunk_ids = technique_ids_used
+                        if get_node(tree_def, resting_node_id)["type"] == "end":
+                            active_tree.status = "completed"
+                        tree_handled = True
+                else:
+                    active_tree.status = "abandoned"
+
+        if not tree_handled:
+            retrieved_chunks = retrieve_relevant_chunks(db, payload.user_text, raw_domain_tag)
+            retrieved_chunk_ids = [c["id"] for c in retrieved_chunks]
+            kb_context = (
+                "\n\n".join(f"[{c['title']}] {c['chunk_text']}" for c in retrieved_chunks)
+                if retrieved_chunks else None
+            )
+
+            raw_result = generate_reply_with_context(
+                user_text=payload.user_text,
+                profile_context=profile_context,
+                history=history,
+                memory_summary=memory_summary,
+                kb_context=kb_context,
+            )
+            llm_text, used_model_path, used_model_name = _normalize_llm_result(raw_result)
+            fallback_used = used_model_path in ("fallback", "final_fallback")
+
+            if risk_tier == "moderate":
+                assistant_text = f"{MODERATE_FA}\n\n{llm_text}"
+            else:
+                assistant_text = llm_text
 
     output_blocked = is_blocked_output(assistant_text)
     if output_blocked:
@@ -402,8 +506,7 @@ def chat_turn(
         ms_preview = None
         if memory_summary:
             ms_preview = (
-                memory_summary
-                if len(memory_summary) <= MEMORY_PREVIEW_CHARS
+                memory_summary if len(memory_summary) <= MEMORY_PREVIEW_CHARS
                 else memory_summary[:MEMORY_PREVIEW_CHARS] + "..."
             )
 
@@ -422,6 +525,7 @@ def chat_turn(
                 "used_profile_context": bool(profile_context),
                 "profile_fields_used": profile_fields_used,
                 "retrieved_chunk_ids": retrieved_chunk_ids,
+                "tree_node_used": tree_node_used,
                 "primary_model": primary_model,
                 "fallback_model": fallback_model,
                 "final_fallback_model": final_fallback_model,
@@ -434,15 +538,13 @@ def chat_turn(
         )
 
         if memory_summary:
-            print(
-                f"[MEMORY DEBUG] session_id={s.id} history_count={history_count} "
-                f"memory_summary={ms_preview}"
-            )
+            print(f"[MEMORY DEBUG] session_id={s.id} history_count={history_count} memory_summary={ms_preview}")
 
     print(
         f"[CHAT_TURN] trace_id={trace_id} session_id={s.id} domain={domain_tag} "
         f"risk={risk_tier} session_risk={s.risk_tier} model_path={used_model_path} "
-        f"fallback={fallback_used} blocked={output_blocked} latency_ms={latency_ms}"
+        f"tree_node={tree_node_used} fallback={fallback_used} blocked={output_blocked} "
+        f"latency_ms={latency_ms}"
     )
 
     return ChatTurnOut(
@@ -517,6 +619,7 @@ def delete_debug_traces(current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Not found")
     clear_traces(user_id=current_user.id)
     return {"ok": True}
+
 
 def get_current_admin_user(current_user: User = Depends(get_current_user)) -> User:
     if not current_user.is_admin:

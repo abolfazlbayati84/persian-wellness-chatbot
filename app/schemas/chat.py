@@ -45,6 +45,7 @@ class TraceItem(BaseModel):
     profile_fields_used: list[str] = Field(default_factory=list)
 
     retrieved_chunk_ids: list[int] = Field(default_factory=list)
+    tree_node_used: Optional[str] = None
 
     primary_model: Optional[str] = None
     fallback_model: Optional[str] = None

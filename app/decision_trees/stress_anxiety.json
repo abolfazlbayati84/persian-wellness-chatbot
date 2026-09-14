@@ -1,0 +1,46 @@
+{
+  "domain": "stress_anxiety",
+  "root": "assess_type",
+  "max_unclear_before_abandon": 2,
+  "nodes": {
+    "assess_type": {
+      "type": "question",
+      "prompt_to_user": "این حسی که داری بیشتر جسمیه (مثل تپش قلب، تنش بدن) یا بیشتر افکار نگران‌کننده‌ست که ذهنتو رها نمی‌کنن؟",
+      "branches": {
+        "physical": "breathing_technique",
+        "mental_worry": "worry_time_technique"
+      }
+    },
+    "breathing_technique": {
+      "type": "leaf",
+      "technique_kb_ids": [1],
+      "next_node": "check_in"
+    },
+    "worry_time_technique": {
+      "type": "leaf",
+      "technique_kb_ids": [2],
+      "next_node": "check_in"
+    },
+    "check_in": {
+      "type": "question",
+      "prompt_to_user": "بعد از امتحان کردنش، حالت بهتر شد یا هنوز همون‌جایی؟",
+      "branches": {
+        "better": "end_positive",
+        "same_or_worse": "offer_alternate"
+      }
+    },
+    "offer_alternate": {
+      "type": "leaf",
+      "technique_kb_ids": [1, 2],
+      "next_node": "end_needs_more_support"
+    },
+    "end_positive": {
+      "type": "end",
+      "closing_style": "positive"
+    },
+    "end_needs_more_support": {
+      "type": "end",
+      "closing_style": "needs_more_support"
+    }
+  }
+}

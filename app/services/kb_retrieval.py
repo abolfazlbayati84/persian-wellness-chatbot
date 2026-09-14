@@ -2,6 +2,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.services.embeddings import embed_query
+from app.models.kb_document import KBDocument
 
 # Maps app/services/classifiers.py's DomainTag values to the domain labels
 # used in kb_documents.domain (see scripts/kb_seed_data.py). These two
@@ -108,4 +109,18 @@ def retrieve_relevant_chunks(
             "distance": float(r.distance),
         }
         for r in rows
+    ]
+
+def get_documents_by_ids(db: Session, ids: list[int]) -> list[dict]:
+    """Fetch specific KB documents by id, in the given order -- used by the
+    decision-tree engine to pull an exact, pre-approved technique instead
+    of doing a semantic search."""
+    if not ids:
+        return []
+    rows = db.query(KBDocument).filter(KBDocument.id.in_(ids)).all()
+    by_id = {r.id: r for r in rows}
+    ordered = [by_id[i] for i in ids if i in by_id]
+    return [
+        {"id": r.id, "domain": r.domain, "title": r.title, "chunk_text": r.chunk_text}
+        for r in ordered
     ]
