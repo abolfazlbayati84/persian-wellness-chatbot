@@ -1,0 +1,25 @@
+{
+  "domain": "time_management_study",
+  "root": "assess_type",
+  "max_unclear_before_abandon": 2,
+  "nodes": {
+    "assess_type": {
+      "type": "question",
+      "prompt_to_user": "مشکل بیشتر اینه که وقتی شروع می‌کنی تمرکز نگه‌داشتن سخته، یا اینه که کار اونقدر بزرگه که نمی‌دونی از کجا شروعش کنی؟",
+      "branches": {
+        "focus_issue": "pomodoro_technique",
+        "task_too_big": "break_down_technique"
+      }
+    },
+    "pomodoro_technique": { "type": "leaf", "technique_kb_ids": [7], "next_node": "check_in" },
+    "break_down_technique": { "type": "leaf", "technique_kb_ids": [8], "next_node": "check_in" },
+    "check_in": {
+      "type": "question",
+      "prompt_to_user": "حس می‌کنی این روش می‌تونه کمک کنه شروع کنی؟",
+      "branches": { "better": "end_positive", "same_or_worse": "offer_alternate" }
+    },
+    "offer_alternate": { "type": "leaf", "technique_kb_ids": [7, 8], "next_node": "end_needs_more_support" },
+    "end_positive": { "type": "end", "closing_style": "positive" },
+    "end_needs_more_support": { "type": "end", "closing_style": "needs_more_support" }
+  }
+}

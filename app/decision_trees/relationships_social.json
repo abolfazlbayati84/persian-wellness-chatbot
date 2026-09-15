@@ -1,0 +1,25 @@
+{
+  "domain": "relationships_social",
+  "root": "assess_type",
+  "max_unclear_before_abandon": 2,
+  "nodes": {
+    "assess_type": {
+      "type": "question",
+      "prompt_to_user": "مشکل بیشتر اینه که نمی‌دونی چطور احساست رو بیان کنی، یا اینه که حس می‌کنی طرف مقابل حرفتو نمی‌شنوه؟",
+      "branches": {
+        "expressing_feelings": "i_statement_technique",
+        "not_being_heard": "active_listening_technique"
+      }
+    },
+    "i_statement_technique": { "type": "leaf", "technique_kb_ids": [5], "next_node": "check_in" },
+    "active_listening_technique": { "type": "leaf", "technique_kb_ids": [6], "next_node": "check_in" },
+    "check_in": {
+      "type": "question",
+      "prompt_to_user": "فکر می‌کنی این روش برات قابل امتحان کردنه؟",
+      "branches": { "better": "end_positive", "same_or_worse": "offer_alternate" }
+    },
+    "offer_alternate": { "type": "leaf", "technique_kb_ids": [5, 6], "next_node": "end_needs_more_support" },
+    "end_positive": { "type": "end", "closing_style": "positive" },
+    "end_needs_more_support": { "type": "end", "closing_style": "needs_more_support" }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "domain": "depression_motivation",
+  "root": "assess_type",
+  "max_unclear_before_abandon": 2,
+  "nodes": {
+    "assess_type": {
+      "type": "question",
+      "prompt_to_user": "این بی‌انگیزگی بیشتر به‌خاطر اینه که نمی‌دونی از کجا شروع کنی، یا بیشتر حس می‌کنی اصلاً هیچی برات مهم نیست؟",
+      "branches": {
+        "dont_know_where_to_start": "behavioral_activation_technique",
+        "nothing_feels_important": "values_checkin_technique"
+      }
+    },
+    "behavioral_activation_technique": { "type": "leaf", "technique_kb_ids": [3], "next_node": "check_in" },
+    "values_checkin_technique": { "type": "leaf", "technique_kb_ids": [4], "next_node": "check_in" },
+    "check_in": {
+      "type": "question",
+      "prompt_to_user": "بعد از این حرفا، حس می‌کنی برداشتن یه قدم کوچیک برات راحت‌تر شد یا نه؟",
+      "branches": { "better": "end_positive", "same_or_worse": "offer_alternate" }
+    },
+    "offer_alternate": { "type": "leaf", "technique_kb_ids": [3, 4], "next_node": "end_needs_more_support" },
+    "end_positive": { "type": "end", "closing_style": "positive" },
+    "end_needs_more_support": { "type": "end", "closing_style": "needs_more_support" }
+  }
+}

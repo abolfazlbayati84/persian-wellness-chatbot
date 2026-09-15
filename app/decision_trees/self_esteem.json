@@ -1,0 +1,25 @@
+{
+  "domain": "self_esteem",
+  "root": "assess_type",
+  "max_unclear_before_abandon": 2,
+  "nodes": {
+    "assess_type": {
+      "type": "question",
+      "prompt_to_user": "این حس بیشتر به‌خاطر یه فکر منفی مشخصه که این روزا زیاد میاد سراغت، یا بیشتر یه حس کلیِ سخت‌گیری با خودته؟",
+      "branches": {
+        "specific_negative_thought": "reframe_technique",
+        "general_self_criticism": "self_compassion_technique"
+      }
+    },
+    "reframe_technique": { "type": "leaf", "technique_kb_ids": [9], "next_node": "check_in" },
+    "self_compassion_technique": { "type": "leaf", "technique_kb_ids": [10], "next_node": "check_in" },
+    "check_in": {
+      "type": "question",
+      "prompt_to_user": "بعد از این، حست نسبت به خودت یه‌کم بهتر شد؟",
+      "branches": { "better": "end_positive", "same_or_worse": "offer_alternate" }
+    },
+    "offer_alternate": { "type": "leaf", "technique_kb_ids": [9, 10], "next_node": "end_needs_more_support" },
+    "end_positive": { "type": "end", "closing_style": "positive" },
+    "end_needs_more_support": { "type": "end", "closing_style": "needs_more_support" }
+  }
+}
