@@ -12,7 +12,7 @@ if not database_url:
         "DATABASE_URL was not found. Make sure the .env file is in the project root."
     )
 
-engine = create_engine(database_url)
+engine = create_engine(database_url, connect_args={"connect_timeout": 10})
 
 with engine.connect() as connection:
     result = connection.execute(text("SELECT version();"))

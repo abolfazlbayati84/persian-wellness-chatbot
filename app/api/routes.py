@@ -31,7 +31,14 @@ from app.core.security import (
     decode_access_token,
 )
 
-from app.services.llm_client import generate_reply_with_context, summarize_conversation
+from app.services.llm_client import (
+    generate_reply_with_context,
+    summarize_conversation,
+    update_user_memory_summary,
+    filter_relevant_past_messages,
+)
+from app.services.cross_session_memory import search_past_messages
+from app.services.embeddings import embed_passage
 from app.services.classifiers import classify_domain, classify_risk, max_risk, is_blocked_output
 from app.services.safety_templates import CRISIS_FA, MODERATE_FA, BLOCKED_OUTPUT_FA
 from app.services.memory_service import build_memory_summary
@@ -216,16 +223,26 @@ def end_session(
 
     if rows:
         transcript = "\n".join(f"{m.role}: {m.content}" for m in rows)
-        result = summarize_conversation(transcript)
+        existing = db.query(EpisodicSummary).filter(EpisodicSummary.user_id == current_user.id).first()
+
+        result = update_user_memory_summary(
+            existing.summary_text if existing else None,
+            transcript,
+        )
         summary_text = (result.get("text") or "").strip()
+
         if summary_text and not summary_text.startswith("متأسفم"):
-            db.add(
-                EpisodicSummary(
-                    user_id=current_user.id,
-                    session_id=s.id,
-                    summary_text=summary_text,
+            if existing:
+                existing.summary_text = summary_text
+                existing.session_id = s.id
+            else:
+                db.add(
+                    EpisodicSummary(
+                        user_id=current_user.id,
+                        session_id=s.id,
+                        summary_text=summary_text,
+                    )
                 )
-            )
 
     s.ended_at = datetime.utcnow()
     db.commit()
@@ -279,6 +296,7 @@ def chat_turn(
         content=payload.user_text,
         domain_tag=domain_tag,
         risk_tier=risk_tier,
+        embedding=embed_passage(payload.user_text),
     )
     db.add(user_msg)
     db.flush()
@@ -347,17 +365,11 @@ def chat_turn(
         ]
         memory_summary = build_memory_summary(memory_items)
 
-        recent_summaries = (
-            db.query(EpisodicSummary)
-            .filter(EpisodicSummary.user_id == s.user_id)
-            .order_by(EpisodicSummary.created_at.desc())
-            .limit(3)
-            .all()
+        user_profile_summary = (
+            db.query(EpisodicSummary).filter(EpisodicSummary.user_id == s.user_id).first()
         )
-        if recent_summaries:
-            long_term_text = "\n\n".join(
-                f"[خلاصه‌ی گفتگوی قبلی] {e.summary_text}" for e in reversed(recent_summaries)
-            )
+        if user_profile_summary:
+            long_term_text = f"[شناخت کلی از این کاربر] {user_profile_summary.summary_text}"
             memory_summary = f"{long_term_text}\n\n{memory_summary}" if memory_summary else long_term_text
 
         tree_handled = False
@@ -465,12 +477,30 @@ def chat_turn(
                 if retrieved_chunks else None
             )
 
+            candidate_past_messages = search_past_messages(
+                db, s.user_id, s.id, payload.user_text, debug_mode=debug_mode,
+            )
+            relevant_past_messages = filter_relevant_past_messages(
+                payload.user_text, candidate_past_messages,
+            )
+            if debug_mode and candidate_past_messages:
+                kept_ids = {m["id"] for m in relevant_past_messages}
+                print(
+                    f"[CROSS_SESSION DEBUG] {len(candidate_past_messages)} candidate(s), "
+                    f"LLM kept {len(relevant_past_messages)}: ids={sorted(kept_ids)}"
+                )
+            cross_session_context = (
+                "\n".join(f"- {m['content']}" for m in relevant_past_messages)
+                if relevant_past_messages else None
+            )
+
             raw_result = generate_reply_with_context(
                 user_text=payload.user_text,
                 profile_context=profile_context,
                 history=history,
                 memory_summary=memory_summary,
                 kb_context=kb_context,
+                cross_session_context=cross_session_context,
             )
             llm_text, used_model_path, used_model_name = _normalize_llm_result(raw_result)
             fallback_used = used_model_path in ("fallback", "final_fallback")

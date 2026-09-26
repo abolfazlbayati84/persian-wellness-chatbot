@@ -20,6 +20,7 @@ engine = create_engine(
     echo=False,
     pool_pre_ping=True,   # check the connection is alive before using it
     pool_recycle=280,     # proactively recycle before Neon's idle timeout
+    connect_args={"connect_timeout": 10},  # fail fast instead of hanging forever
 )
 
 SessionLocal = sessionmaker(

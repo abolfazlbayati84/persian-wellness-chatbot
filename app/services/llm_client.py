@@ -31,6 +31,56 @@ SUMMARY_SYSTEM_PROMPT = (
     "points. Do not include the assistant's exact wording, only facts."
 )
 
+MEMORY_SUMMARY_TARGET_WORDS = 150
+MEMORY_SUMMARY_TOLERANCE = 0.10  # +/-10%, enforced in code below, not just prompted for
+_MEMORY_MIN_WORDS = int(MEMORY_SUMMARY_TARGET_WORDS * (1 - MEMORY_SUMMARY_TOLERANCE))
+_MEMORY_MAX_WORDS = int(MEMORY_SUMMARY_TARGET_WORDS * (1 + MEMORY_SUMMARY_TOLERANCE))
+
+MEMORY_UPDATE_SYSTEM_PROMPT = (
+    "You are a clinical documentation assistant maintaining a single, "
+    "continuously updated memory profile of one user across ALL their "
+    "conversations with a Persian wellness chatbot.\n"
+    "You will be given (1) the EXISTING memory profile of this user (may "
+    "say none exists, if this is their first session), and (2) the "
+    "transcript of a session that just ended.\n"
+    "Produce an UPDATED memory profile IN PERSIAN that merges what's still "
+    "relevant from the existing profile with new information from this "
+    "session. Do NOT just append -- consolidate: drop things that are now "
+    "resolved or outdated, keep recurring themes, and update the emotional "
+    "trajectory to reflect the pattern over time, not just this one "
+    "session.\n"
+    f"STRICT LENGTH RULE: your output MUST be approximately "
+    f"{MEMORY_SUMMARY_TARGET_WORDS} Persian words (between "
+    f"{_MEMORY_MIN_WORDS} and {_MEMORY_MAX_WORDS} words). This profile "
+    "must stay roughly the SAME length forever, no matter how many "
+    "sessions the user has had -- when adding something new, you must "
+    "drop or shorten something else of lower priority to make room. Think "
+    "of it as a compact patient chart that gets refined, never a growing "
+    "diary.\n"
+    "Cover exactly these four points, each as a short line:\n"
+    "۱) دغدغه‌های اصلی و مستمر کاربر (نه فقط همین سشن)\n"
+    "۲) تکنیک‌هایی که تا الان امتحان کرده و نتیجه‌شون (اگر مشخص است)\n"
+    "۳) قدم عملی‌ای که در جریان است یا آخرین‌بار توافق شد\n"
+    "۴) روند کلی احساسی کاربر در طول زمان (نه فقط این سشن)\n"
+    "Do not add commentary or anything outside these four points."
+)
+
+
+def _word_count(text: str) -> int:
+    return len((text or "").split())
+
+
+def _enforce_word_budget(text: str) -> str:
+    """Hard cap in code, not just a prompt request: guarantees the memory
+    profile never exceeds the +10% ceiling, however many session-end
+    updates happen, so its size stays fixed in the long run even if the
+    model doesn't fully comply with the length instruction."""
+    words = text.split()
+    if len(words) <= _MEMORY_MAX_WORDS:
+        return text
+    truncated = " ".join(words[:_MEMORY_MAX_WORDS])
+    return truncated.rstrip("،, ") + " …"
+
 _FORBIDDEN_SCRIPT_RE = re.compile(
     r"[\uAC00-\uD7A3\u3040-\u30FF\u4E00-\u9FFF\u0400-\u04FF]"
 )
@@ -357,6 +407,7 @@ def generate_reply_with_context(
     history: list[dict],
     memory_summary: str | None = None,
     kb_context: str | None = None,
+    cross_session_context: str | None = None,
 ) -> dict:
     debug_mode = (os.getenv("DEBUG", "false") or "false").strip().lower() in ("1", "true", "yes", "on")
 
@@ -370,13 +421,28 @@ def generate_reply_with_context(
             {
                 "role": "system",
                 "content": (
-                    "Relevant reference material (validated psychoeducational content). "
-                    "Draw on this when it fits the user's message; put it in your own "
-                    "natural, empathetic Persian words, don't copy it verbatim, and don't "
-                    "mention that you're using 'reference material':\n" + kb_context
+                        "Relevant reference material (validated psychoeducational content). "
+                        "Draw on this when it fits the user's message; put it in your own "
+                        "natural, empathetic Persian words, don't copy it verbatim, and don't "
+                        "mention that you're using 'reference material':\n" + kb_context
                 ),
             }
         )
+
+    if cross_session_context:
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                        "Something relevant the user told you in an EARLIER, different "
+                        "conversation (not this session). Only bring it up if it genuinely "
+                        "helps with their current message -- weave it in naturally, don't "
+                        "just recite it or announce that you're recalling an old message:\n"
+                        + cross_session_context
+                ),
+            }
+        )
+
     messages.extend(history)
     messages.append({"role": "user", "content": user_text})
 
@@ -398,3 +464,72 @@ def summarize_conversation(transcript_text: str) -> dict:
         {"role": "user", "content": transcript_text[:6000]},
     ]
     return _run_cascade(messages, log_prefix="SUMMARY")
+
+def update_user_memory_summary(existing_summary: str | None, transcript_text: str) -> dict:
+    """Consolidate the user's single evolving memory profile with a
+    just-finished session's transcript (design doc 4.2, tier 2 -- one row
+    per user, updated in place, size-capped so it never grows unbounded)."""
+    existing_word_count = _word_count(existing_summary) if existing_summary else 0
+    existing_block = existing_summary if existing_summary else "(این اولین سشن کاربر است، پروفایل قبلی وجود ندارد)"
+    user_content = (
+        f"EXISTING MEMORY PROFILE ({existing_word_count} words):\n{existing_block}\n\n"
+        f"NEW SESSION TRANSCRIPT:\n{transcript_text[:6000]}"
+    )
+    messages = [
+        {"role": "system", "content": MEMORY_UPDATE_SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+    result = _run_cascade(messages, log_prefix="MEMORY_UPDATE")
+
+    text = result.get("text") or ""
+    if text and not text.startswith("متأسفم"):
+        enforced = _enforce_word_budget(text)
+        before, after = _word_count(text), _word_count(enforced)
+        if after != before:
+            print(f"[MEMORY_UPDATE DEBUG] model returned {before} words, truncated to {after} (cap={_MEMORY_MAX_WORDS})")
+        result["text"] = enforced
+
+    return result
+
+_RELEVANCE_SYSTEM = (
+    "You judge whether an OLDER message a user said in a DIFFERENT, past "
+    "conversation is genuinely useful context for responding to their "
+    "CURRENT message. Say a message is relevant only if it would "
+    "meaningfully change or inform how you respond to the current "
+    "message -- not just because they share a topic, word, or vague "
+    "similarity.\n"
+    "You will be given the current message and a numbered list of "
+    "candidate older messages. Respond with ONLY a comma-separated list "
+    "of the numbers that are genuinely relevant (e.g. '1,3'), or exactly "
+    "the word 'none' if none of them are relevant. No explanation."
+)
+
+
+def filter_relevant_past_messages(current_text: str, candidates: list[dict]) -> list[dict]:
+    """Second-stage LLM judgment on top of embedding search. Necessary
+    because raw conversational text compresses into a very narrow distance
+    range (unlike the curated KB) -- e.g. an unrelated message and a truly
+    relevant one were observed only 0.01 apart in cosine distance, meaning
+    no fixed cutoff can reliably separate them. This mirrors the same fix
+    already applied to decision-tree branch classification."""
+    if not candidates:
+        return []
+
+    numbered = "\n".join(f"{i + 1}. {c['content']}" for i, c in enumerate(candidates))
+    messages = [
+        {"role": "system", "content": _RELEVANCE_SYSTEM},
+        {"role": "user", "content": f"CURRENT MESSAGE: {current_text}\n\nCANDIDATE OLDER MESSAGES:\n{numbered}"},
+    ]
+    result = _run_cascade(messages, log_prefix="MEMORY_RELEVANCE")
+    raw = (result.get("text") or "").strip().lower()
+
+    if not raw or raw.startswith("none") or raw.startswith("متأسفم"):
+        return []
+
+    kept = []
+    for part in raw.replace(" ", "").split(","):
+        if part.isdigit():
+            idx = int(part) - 1
+            if 0 <= idx < len(candidates):
+                kept.append(candidates[idx])
+    return kept
