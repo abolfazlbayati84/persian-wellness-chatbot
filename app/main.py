@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.api.routes import router
@@ -9,14 +10,22 @@ app = FastAPI(
     debug=settings.debug,
 )
 
+# Dev-only: allows the frontend (served from a different origin, e.g. the
+# published artifact page) to call this API. Tighten allow_origins before
+# any real deployment.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(router)
 
 
 @app.on_event("startup")
 def _warm_up_embedding_model() -> None:
-    """Load the embedding model into memory at server startup instead of on
-    the first real chat request -- avoids surprising the first user with a
-    ~1 minute wait while the ~1.1GB model loads from disk."""
     try:
         from app.services.embeddings import embed_query
         print("[STARTUP] warming up embedding model (one-time load)...")

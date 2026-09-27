@@ -19,7 +19,7 @@ from app.models.tree_progress import TreeProgress
 
 from app.schemas.user import UserCreate, UserRead
 from app.schemas.profile import ProfileUpsert, ProfileRead
-from app.schemas.session import SessionCreate, SessionRead, SessionMessagesOut
+from app.schemas.session import SessionCreate, SessionRead, SessionMessagesOut, SessionListItem
 from app.schemas.chat import ChatTurnIn, ChatTurnOut, MessageRead, TraceItem
 from app.schemas.risk_event import RiskEventRead, RiskEventReviewIn
 from app.schemas.auth import LoginIn, TokenOut
@@ -198,6 +198,41 @@ def create_session(
     db.commit()
     db.refresh(s)
     return s
+
+@router.get("/sessions", response_model=list[SessionListItem])
+def list_my_sessions(
+    limit: int = Query(30, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    sessions = (
+        db.query(ChatSession)
+        .filter(ChatSession.user_id == current_user.id)
+        .order_by(ChatSession.started_at.desc())
+        .limit(limit)
+        .all()
+    )
+    items = []
+    for s in sessions:
+        first_msg = (
+            db.query(Message)
+            .filter(Message.session_id == s.id, Message.role == "user")
+            .order_by(Message.created_at.asc())
+            .first()
+        )
+        count = db.query(Message).filter(Message.session_id == s.id).count()
+        items.append(
+            SessionListItem(
+                id=s.id,
+                started_at=s.started_at,
+                ended_at=s.ended_at,
+                risk_tier=s.risk_tier,
+                preview=(first_msg.content[:60] if first_msg else None),
+                domain_tag=(first_msg.domain_tag if first_msg else None),
+                message_count=count,
+            )
+        )
+    return items
 
 
 @router.post("/sessions/{session_id}/end", response_model=SessionRead)

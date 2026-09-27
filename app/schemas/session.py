@@ -22,6 +22,16 @@ class SessionRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SessionListItem(BaseModel):
+    id: int
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    risk_tier: str | None = None
+    preview: str | None = None
+    domain_tag: str | None = None
+    message_count: int = 0
+
+
 class SessionMessagesOut(BaseModel):
     session: SessionRead
     total: int
