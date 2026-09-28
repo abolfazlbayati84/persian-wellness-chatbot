@@ -33,13 +33,13 @@ from app.core.security import (
 
 from app.services.llm_client import (
     generate_reply_with_context,
-    summarize_conversation,
     update_user_memory_summary,
     filter_relevant_past_messages,
 )
 from app.services.cross_session_memory import search_past_messages
 from app.services.embeddings import embed_passage
 from app.services.classifiers import classify_domain, classify_risk, max_risk, is_blocked_output
+from app.services.llm_classifier import classify_message
 from app.services.safety_templates import CRISIS_FA, MODERATE_FA, BLOCKED_OUTPUT_FA
 from app.services.memory_service import build_memory_summary
 from app.services.kb_retrieval import retrieve_relevant_chunks, CLASSIFIER_TO_KB_DOMAIN
@@ -199,6 +199,7 @@ def create_session(
     db.refresh(s)
     return s
 
+
 @router.get("/sessions", response_model=list[SessionListItem])
 def list_my_sessions(
     limit: int = Query(30, ge=1, le=100),
@@ -307,9 +308,24 @@ def chat_turn(
     if s.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    raw_domain_tag = classify_domain(payload.user_text)
+    # Two independent classifiers, combined for safety:
+    # - keyword-based (classifiers.py): fast, deterministic, no network
+    #   dependency -- a safety backstop that always runs.
+    # - LLM-based (llm_classifier.py): understands meaning/nuance/idiom,
+    #   catches cases keyword matching misses.
+    # Risk: take the HIGHER of the two (never let the LLM's judgment
+    # lower a keyword-detected risk, and vice versa -- recall over
+    # precision for safety, per design doc 9.2).
+    # Domain: trust the LLM when it commits to a specific domain; fall
+    # back to the keyword result only if the LLM said "other" (e.g. on
+    # a parse failure or genuine ambiguity).
+    kw_domain = classify_domain(payload.user_text)
+    kw_risk = classify_risk(payload.user_text)
+    llm_class = classify_message(payload.user_text)
+
+    raw_domain_tag = llm_class["domain"] if llm_class["domain"] != "other" else kw_domain
     domain_tag = raw_domain_tag
-    risk_tier = classify_risk(payload.user_text)
+    risk_tier = max_risk(kw_risk, llm_class["risk"])
 
     if domain_tag == "other":
         last_domain_msg = (
