@@ -321,7 +321,13 @@ def chat_turn(
     # a parse failure or genuine ambiguity).
     kw_domain = classify_domain(payload.user_text)
     kw_risk = classify_risk(payload.user_text)
-    llm_class = classify_message(payload.user_text)
+
+    if kw_risk == "severe":
+        # The keyword layer already detected a crisis: don't make the crisis
+        # response wait on a network call to the LLM classifier.
+        llm_class = {"domain": "other", "risk": "severe"}
+    else:
+        llm_class = classify_message(payload.user_text)
 
     raw_domain_tag = llm_class["domain"] if llm_class["domain"] != "other" else kw_domain
     domain_tag = raw_domain_tag
