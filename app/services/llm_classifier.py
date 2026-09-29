@@ -19,12 +19,9 @@ _SYSTEM = (
     "or softly phrased (e.g. 'کاش نبودم', 'دیگه دلیلی برای ادامه نمی‌بینم', "
     "'می‌خوام همه چی تموم بشه'). When genuinely unsure between severe and "
     "moderate, choose severe.\n"
-    "- moderate: hopelessness, feeling worthless, panic attacks, feeling "
-    "unable to cope, but no indication of wanting to end one's life.\n"
-    "- low: everyday stress, anxiety, poor sleep, fatigue, low mood, with "
-    "no signs of hopelessness or crisis.\n"
-    "- none: no distress signal at all (e.g. small talk, a factual "
-    "question, positive mood).\n"
+    "- moderate: explicit hopelessness (ناامیدی عمیق), profound feelings of worthlessness (احساس بی‌ارزشی شدید), acute panic attacks (حمله پنیک فعال), or overwhelming distress, but no suicidal ideation. Do NOT classify everyday unmotivation, lack of energy, procrastination, or somatic anxiety symptoms (like heart palpitations, muscle tension, restlessness) as moderate; those belong to 'low'.\n"
+    "- low: everyday stress, anxiety, somatic symptoms (palpitations, muscle tension, restlessness), procrastination, lack of motivation, study difficulty, fatigue, poor sleep, sadness, or mild relationship issues, with no signs of active panic or hopelessness.\n"
+    "- none: no distress signal at all (e.g. small talk, a factual question, positive mood, or confirming that an exercise helped).\n"
     "Respond with ONLY 'domain,risk', e.g. 'anxiety,low'. No explanation."
 )
 

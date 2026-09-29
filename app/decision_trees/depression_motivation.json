@@ -1,25 +1,73 @@
 {
   "domain": "depression_motivation",
-  "root": "assess_type",
+  "root": "assess_depression_type",
   "max_unclear_before_abandon": 2,
   "nodes": {
-    "assess_type": {
+    "assess_depression_type": {
       "type": "question",
-      "prompt_to_user": "این بی‌انگیزگی بیشتر به‌خاطر اینه که نمی‌دونی از کجا شروع کنی، یا بیشتر حس می‌کنی اصلاً هیچی برات مهم نیست؟",
+      "prompt_to_user": "این بی‌حالی و بی‌انگیزگی که داری الان بیشتر کدوم حالته؟ حس می‌کنی شروع کردن کارها برات مثل کوه سنگینه و مقاومت داری (اینرسی شروع)، یا بیشتر حس می‌کنی کارها پوچ و بی‌معنی شدن و ارزشی ندارن، یا انقدر خودت رو بابت این وضعیت سرزنش می‌کنی که رمقی برات نمونده؟",
       "branches": {
-        "dont_know_where_to_start": "behavioral_activation_technique",
-        "nothing_feels_important": "values_checkin_technique"
+        "inertia_starting": "leaf_five_minute_rule",
+        "loss_of_meaning": "leaf_values_clarification",
+        "self_criticism_guilt": "leaf_pacing_validation"
       }
     },
-    "behavioral_activation_technique": { "type": "leaf", "technique_kb_ids": [3], "next_node": "check_in" },
-    "values_checkin_technique": { "type": "leaf", "technique_kb_ids": [4], "next_node": "check_in" },
-    "check_in": {
-      "type": "question",
-      "prompt_to_user": "بعد از این حرفا، حس می‌کنی برداشتن یه قدم کوچیک برات راحت‌تر شد یا نه؟",
-      "branches": { "better": "end_positive", "same_or_worse": "offer_alternate" }
+    "leaf_five_minute_rule": {
+      "type": "leaf",
+      "technique_kb_ids": [6],
+      "next_node": "checkin_five_minute"
     },
-    "offer_alternate": { "type": "leaf", "technique_kb_ids": [3, 4], "next_node": "end_needs_more_support" },
-    "end_positive": { "type": "end", "closing_style": "positive" },
-    "end_needs_more_support": { "type": "end", "closing_style": "needs_more_support" }
+    "checkin_five_minute": {
+      "type": "question",
+      "prompt_to_user": "فکر می‌کنی بتونی با خودت توافق کنی که فقط برای ۵ دقیقه یه قدم خیلی کوچیک برداری، یا حس می‌کنی حتی همین ۵ دقیقه هم زورت نمی‌رسه و کلاً می‌خوای زیر پتو بمونی و منزوی باشی؟",
+      "branches": {
+        "can_try": "end_depression_positive",
+        "stuck_isolated": "leaf_opposite_action"
+      }
+    },
+    "leaf_opposite_action": {
+      "type": "leaf",
+      "technique_kb_ids": [9],
+      "next_node": "end_depression_supported"
+    },
+    "leaf_values_clarification": {
+      "type": "leaf",
+      "technique_kb_ids": [8],
+      "next_node": "checkin_values"
+    },
+    "checkin_values": {
+      "type": "question",
+      "prompt_to_user": "وقتی به ارزش‌های اصیلت فکر می‌کنی، آیا جرقه‌ای از جهت و معنا رو حس می‌کنی، یا کلاً احساس می‌کنی روزهات خاکستریه و هیچ کاری لذت‌بخش نیست؟",
+      "branches": {
+        "spark_felt": "end_depression_positive",
+        "numb_and_empty": "leaf_pleasure_mastery"
+      }
+    },
+    "leaf_pleasure_mastery": {
+      "type": "leaf",
+      "technique_kb_ids": [7],
+      "next_node": "end_depression_supported"
+    },
+    "leaf_pacing_validation": {
+      "type": "leaf",
+      "technique_kb_ids": [10],
+      "next_node": "checkin_pacing"
+    },
+    "checkin_pacing": {
+      "type": "question",
+      "prompt_to_user": "آیا برات ممکنه امروز کمی به بدنت استراحت بدون عذاب وجدان بدی و سرعتت رو کم کنی، یا نگرانی عقب موندن از برنامه‌هات رهایت نمی‌کنه و باز دستپاچه‌ای؟",
+      "branches": {
+        "accept_rest": "end_depression_positive",
+        "worried_behind": "leaf_five_minute_rule"
+      }
+    },
+    "end_depression_positive": {
+      "type": "end",
+      "closing_style": "positive"
+    },
+    "end_depression_supported": {
+      "type": "end",
+      "closing_style": "needs_more_support"
+    }
   }
 }

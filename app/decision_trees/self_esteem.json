@@ -1,25 +1,73 @@
 {
   "domain": "self_esteem",
-  "root": "assess_type",
+  "root": "assess_esteem_type",
   "max_unclear_before_abandon": 2,
   "nodes": {
-    "assess_type": {
+    "assess_esteem_type": {
       "type": "question",
-      "prompt_to_user": "این حس بیشتر به‌خاطر یه فکر منفی مشخصه که این روزا زیاد میاد سراغت، یا بیشتر یه حس کلیِ سخت‌گیری با خودته؟",
+      "prompt_to_user": "این حس ناخوشایندی که نسبت به خودت داری، بیشتر شبیه کدوم یکیه؟ یک قضاوت یا برچسب منفی مشخصه (مثل من بی‌عرضه‌ام یا همیشه خراب می‌کنم)، یا یک حس کلیِ شرم و انزواست که فکر می‌کنی با بقیه فرق داری و ناکافی هستی، یا صدای یک منتقد بی‌رحم درونیه که بعد از هر اتفاق شروع به سرزنش کردنت می‌کنه؟",
       "branches": {
-        "specific_negative_thought": "reframe_technique",
-        "general_self_criticism": "self_compassion_technique"
+        "specific_negative_label": "leaf_thought_court",
+        "shame_unworthiness": "leaf_self_compassion_break",
+        "inner_critic": "leaf_inner_coach"
       }
     },
-    "reframe_technique": { "type": "leaf", "technique_kb_ids": [9], "next_node": "check_in" },
-    "self_compassion_technique": { "type": "leaf", "technique_kb_ids": [10], "next_node": "check_in" },
-    "check_in": {
-      "type": "question",
-      "prompt_to_user": "بعد از این، حست نسبت به خودت یه‌کم بهتر شد؟",
-      "branches": { "better": "end_positive", "same_or_worse": "offer_alternate" }
+    "leaf_thought_court": {
+      "type": "leaf",
+      "technique_kb_ids": [21],
+      "next_node": "checkin_thought_court"
     },
-    "offer_alternate": { "type": "leaf", "technique_kb_ids": [9, 10], "next_node": "end_needs_more_support" },
-    "end_positive": { "type": "end", "closing_style": "positive" },
-    "end_needs_more_support": { "type": "end", "closing_style": "needs_more_support" }
+    "checkin_thought_court": {
+      "type": "question",
+      "prompt_to_user": "وقتی به شواهد واقعی نگاه می‌کنی، آیا قبول داری این برچسب اغراق‌آمیز بوده، یا این حس از این میاد که ارزش خودت رو فقط به موفقیت‌هات و نمرات یا خروجی‌هات گره زدی؟",
+      "branches": {
+        "label_weakened": "end_esteem_positive",
+        "tied_to_achievements": "leaf_unconditional_worth"
+      }
+    },
+    "leaf_unconditional_worth": {
+      "type": "leaf",
+      "technique_kb_ids": [23],
+      "next_node": "end_esteem_supported"
+    },
+    "leaf_self_compassion_break": {
+      "type": "leaf",
+      "technique_kb_ids": [22],
+      "next_node": "checkin_compassion"
+    },
+    "checkin_compassion": {
+      "type": "question",
+      "prompt_to_user": "وقتی دستت رو روی قلبت گذاشتی و اون جملات رو گفتی، آیا حس کردی گرمای پذیرش یه‌کم قلبت رو آروم کرد، یا مهربانی با خودت برات حس غریب و سختی داره و عادت نداری؟",
+      "branches": {
+        "softened": "end_esteem_positive",
+        "struggle_to_be_kind": "leaf_micro_wins"
+      }
+    },
+    "leaf_micro_wins": {
+      "type": "leaf",
+      "technique_kb_ids": [25],
+      "next_node": "end_esteem_supported"
+    },
+    "leaf_inner_coach": {
+      "type": "leaf",
+      "technique_kb_ids": [24],
+      "next_node": "checkin_coach"
+    },
+    "checkin_coach": {
+      "type": "question",
+      "prompt_to_user": "آیا تونستی صدایی مربی‌گونه و همدلانه درونت پیدا کنی، یا حس می‌کنی دستاوردهات انقدر کمن که هیچ چیزی برای دیدن وجود نداره؟",
+      "branches": {
+        "coach_found": "end_esteem_positive",
+        "see_no_wins": "leaf_micro_wins"
+      }
+    },
+    "end_esteem_positive": {
+      "type": "end",
+      "closing_style": "positive"
+    },
+    "end_esteem_supported": {
+      "type": "end",
+      "closing_style": "needs_more_support"
+    }
   }
 }

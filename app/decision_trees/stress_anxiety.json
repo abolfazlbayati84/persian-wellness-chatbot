@@ -1,44 +1,71 @@
 {
   "domain": "stress_anxiety",
-  "root": "assess_type",
+  "root": "assess_anxiety_type",
   "max_unclear_before_abandon": 2,
   "nodes": {
-    "assess_type": {
+    "assess_anxiety_type": {
       "type": "question",
-      "prompt_to_user": "این حسی که داری بیشتر جسمیه (مثل تپش قلب، تنش بدن) یا بیشتر افکار نگران‌کننده‌ست که ذهنتو رها نمی‌کنن؟",
+      "prompt_to_user": "این استرس یا اضطرابی که تجربه می‌کنی الان بیشتر کجاست؟ بیشتر توی بدنت به شکل تنش، تپش قلب یا بی‌قراریه (جسمی)، یا بیشتر افکار منفی و سناریوهای نگران‌کننده‌ست که ذهنت رو تسخیر کرده (شناختی)، یا حس می‌کنی با یه فشار سنگین و ناگهانی روبه‌رو شدی و گیج شدی؟",
       "branches": {
-        "physical": "breathing_technique",
-        "mental_worry": "worry_time_technique"
+        "somatic": "leaf_physiological_sigh",
+        "cognitive": "leaf_worry_time",
+        "overwhelmed": "leaf_grounding_54321"
       }
     },
-    "breathing_technique": {
+    "leaf_physiological_sigh": {
       "type": "leaf",
       "technique_kb_ids": [1],
-      "next_node": "check_in"
+      "next_node": "checkin_somatic"
     },
-    "worry_time_technique": {
-      "type": "leaf",
-      "technique_kb_ids": [2],
-      "next_node": "check_in"
-    },
-    "check_in": {
+    "checkin_somatic": {
       "type": "question",
-      "prompt_to_user": "بعد از امتحان کردنش، حالت بهتر شد یا هنوز همون‌جایی؟",
+      "prompt_to_user": "بعد از این چند تا نفس عمیق و بازدم آروم، تنش بدنت یا ضربان قلبت یه‌کم آروم‌تر شد یا هنوز حس می‌کنی انقباض و تنش شدیدی توی عضلاتت هست؟",
       "branches": {
-        "better": "end_positive",
-        "same_or_worse": "offer_alternate"
+        "calmer": "end_anxiety_positive",
+        "still_tense": "leaf_pmr_relaxation"
       }
     },
-    "offer_alternate": {
+    "leaf_pmr_relaxation": {
       "type": "leaf",
-      "technique_kb_ids": [1, 2],
-      "next_node": "end_needs_more_support"
+      "technique_kb_ids": [5],
+      "next_node": "end_anxiety_supported"
     },
-    "end_positive": {
+    "leaf_worry_time": {
+      "type": "leaf",
+      "technique_kb_ids": [3],
+      "next_node": "checkin_cognitive"
+    },
+    "checkin_cognitive": {
+      "type": "question",
+      "prompt_to_user": "به‌نظرت نوشتن و به تعویق انداختن این فکرها برات قابل انجامه، یا افکارت انقدر ترسناکن که همش حس می‌کنی بدترین سناریو حتماً رخ میده؟",
+      "branches": {
+        "manageable": "end_anxiety_positive",
+        "catastrophizing": "leaf_decatastrophizing"
+      }
+    },
+    "leaf_decatastrophizing": {
+      "type": "leaf",
+      "technique_kb_ids": [4],
+      "next_node": "end_anxiety_supported"
+    },
+    "leaf_grounding_54321": {
+      "type": "leaf",
+      "technique_kb_ids": [2],
+      "next_node": "checkin_grounding"
+    },
+    "checkin_grounding": {
+      "type": "question",
+      "prompt_to_user": "الان حست نسبت به اطرافت چطوره؟ حس می‌کنی به زمان حال برگشتی و یه‌کم فضا بازتر شد، یا هنوز قلبت تند می‌زنه و بدنت ناآرومه؟",
+      "branches": {
+        "grounded": "end_anxiety_positive",
+        "need_physical": "leaf_physiological_sigh"
+      }
+    },
+    "end_anxiety_positive": {
       "type": "end",
       "closing_style": "positive"
     },
-    "end_needs_more_support": {
+    "end_anxiety_supported": {
       "type": "end",
       "closing_style": "needs_more_support"
     }

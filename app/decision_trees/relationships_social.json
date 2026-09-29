@@ -1,25 +1,73 @@
 {
   "domain": "relationships_social",
-  "root": "assess_type",
+  "root": "assess_relationship_type",
   "max_unclear_before_abandon": 2,
   "nodes": {
-    "assess_type": {
+    "assess_relationship_type": {
       "type": "question",
-      "prompt_to_user": "مشکل بیشتر اینه که نمی‌دونی چطور احساست رو بیان کنی، یا اینه که حس می‌کنی طرف مقابل حرفتو نمی‌شنوه؟",
+      "prompt_to_user": "در این چالش ارتباطی که داری، مسئله اصلی بیشتر چیه؟ می‌خوای ناراحتی یا مرز شخصی‌ات رو بگی اما نمی‌دونی چطور شروع کنی که به دعوا نکشه، یا حس می‌کنی طرف مقابل اصلاً حرفت رو درک نمی‌کنه و گفتگو به بن‌بست رسیده، یا بحث‌هاتون انقدر داغ و پرتنش شده که از کوره درمی‌رید و نیاز به آتش‌بس دارید؟",
       "branches": {
-        "expressing_feelings": "i_statement_technique",
-        "not_being_heard": "active_listening_technique"
+        "expressing_needs": "leaf_i_statement",
+        "feeling_unheard": "leaf_validation_active_listening",
+        "escalated_conflict": "leaf_timeout_pause"
       }
     },
-    "i_statement_technique": { "type": "leaf", "technique_kb_ids": [5], "next_node": "check_in" },
-    "active_listening_technique": { "type": "leaf", "technique_kb_ids": [6], "next_node": "check_in" },
-    "check_in": {
-      "type": "question",
-      "prompt_to_user": "فکر می‌کنی این روش برات قابل امتحان کردنه؟",
-      "branches": { "better": "end_positive", "same_or_worse": "offer_alternate" }
+    "leaf_i_statement": {
+      "type": "leaf",
+      "technique_kb_ids": [11],
+      "next_node": "checkin_i_statement"
     },
-    "offer_alternate": { "type": "leaf", "technique_kb_ids": [5, 6], "next_node": "end_needs_more_support" },
-    "end_positive": { "type": "end", "closing_style": "positive" },
-    "end_needs_more_support": { "type": "end", "closing_style": "needs_more_support" }
+    "checkin_i_statement": {
+      "type": "question",
+      "prompt_to_user": "فکر می‌کنی این قالب گفتن برات شدنیه؟ آیا درخواستت کاملاً مشخصه، یا نگرانی که طرف مقابل از گفتنت ناراحت بشه و احساس می‌کنی نیاز به تعیین یک مرز محکم و قاطع داری؟",
+      "branches": {
+        "ready_to_express": "end_relationships_positive",
+        "need_firm_boundary": "leaf_healthy_boundaries"
+      }
+    },
+    "leaf_healthy_boundaries": {
+      "type": "leaf",
+      "technique_kb_ids": [13],
+      "next_node": "end_relationships_supported"
+    },
+    "leaf_validation_active_listening": {
+      "type": "leaf",
+      "technique_kb_ids": [12],
+      "next_node": "checkin_validation"
+    },
+    "checkin_validation": {
+      "type": "question",
+      "prompt_to_user": "اگر اول دیدگاه و حس طرف مقابل رو بازتاب بدی، حس می‌کنی فضا برای شنیدن حرف خودت بازتر می‌شه، یا ماجرا یه درخواست جدی و قاطعانه‌ست که اصلاً جای تعارف نداره؟",
+      "branches": {
+        "open_to_validate": "end_relationships_positive",
+        "need_firm_assertiveness": "leaf_dear_man"
+      }
+    },
+    "leaf_dear_man": {
+      "type": "leaf",
+      "technique_kb_ids": [14],
+      "next_node": "end_relationships_supported"
+    },
+    "leaf_timeout_pause": {
+      "type": "leaf",
+      "technique_kb_ids": [15],
+      "next_node": "checkin_timeout"
+    },
+    "checkin_timeout": {
+      "type": "question",
+      "prompt_to_user": "آیا امکانش هست این وقفه ۲۰ دقیقه‌ای رو بهش پیشنهاد بدی، یا حس می‌کنی خیلی اوضاع متشنجه و باید کلاً فعلاً از موقعیت فاصله بگیری؟",
+      "branches": {
+        "can_pause": "end_relationships_positive",
+        "escalating_danger": "leaf_healthy_boundaries"
+      }
+    },
+    "end_relationships_positive": {
+      "type": "end",
+      "closing_style": "positive"
+    },
+    "end_relationships_supported": {
+      "type": "end",
+      "closing_style": "needs_more_support"
+    }
   }
 }

@@ -1,25 +1,73 @@
 {
   "domain": "time_management_study",
-  "root": "assess_type",
+  "root": "assess_study_type",
   "max_unclear_before_abandon": 2,
   "nodes": {
-    "assess_type": {
+    "assess_study_type": {
       "type": "question",
-      "prompt_to_user": "مشکل بیشتر اینه که وقتی شروع می‌کنی تمرکز نگه‌داشتن سخته، یا اینه که کار اونقدر بزرگه که نمی‌دونی از کجا شروعش کنی؟",
+      "prompt_to_user": "در مورد کار یا مطالعه‌ات، مانع اصلی الان چیه؟ وقتی شروع می‌کنی تمرکزت سریع می‌پره و سرگرم گوشی یا کارهای دیگه می‌شی (پرش توجه)، یا پروژه و درس اونقدر حجیم و نامفهومه که اصلاً نمی‌دونی چطور بازش کنی (گیجی و غرق‌شدگی)، یا هی می‌خوای همه‌چیز کامل و بی‌نقص باشه و از ترس خراب شدن عقب می‌ندازی (کمال‌گرایی)؟",
       "branches": {
-        "focus_issue": "pomodoro_technique",
-        "task_too_big": "break_down_technique"
+        "focus_distraction": "leaf_pomodoro",
+        "task_overwhelm": "leaf_eisenhower_matrix",
+        "perfectionism_paralysis": "leaf_rough_draft"
       }
     },
-    "pomodoro_technique": { "type": "leaf", "technique_kb_ids": [7], "next_node": "check_in" },
-    "break_down_technique": { "type": "leaf", "technique_kb_ids": [8], "next_node": "check_in" },
-    "check_in": {
-      "type": "question",
-      "prompt_to_user": "حس می‌کنی این روش می‌تونه کمک کنه شروع کنی؟",
-      "branches": { "better": "end_positive", "same_or_worse": "offer_alternate" }
+    "leaf_pomodoro": {
+      "type": "leaf",
+      "technique_kb_ids": [16],
+      "next_node": "checkin_pomodoro"
     },
-    "offer_alternate": { "type": "leaf", "technique_kb_ids": [7, 8], "next_node": "end_needs_more_support" },
-    "end_positive": { "type": "end", "closing_style": "positive" },
-    "end_needs_more_support": { "type": "end", "closing_style": "needs_more_support" }
+    "checkin_pomodoro": {
+      "type": "question",
+      "prompt_to_user": "فکر می‌کنی یه پارت ۱۵ یا ۲۵ دقیقه‌ای رو بتونی بدون گوشی امتحان کنی، یا حین کار مدام افکار متفرقه میان سراغت و تمرکزت رو به هم می‌ریزن؟",
+      "branches": {
+        "ready_to_focus": "end_study_positive",
+        "mind_racing": "leaf_parking_lot"
+      }
+    },
+    "leaf_parking_lot": {
+      "type": "leaf",
+      "technique_kb_ids": [19],
+      "next_node": "end_study_supported"
+    },
+    "leaf_eisenhower_matrix": {
+      "type": "leaf",
+      "technique_kb_ids": [17],
+      "next_node": "checkin_eisenhower"
+    },
+    "checkin_eisenhower": {
+      "type": "question",
+      "prompt_to_user": "وقتی مهم‌ترین کار امروزت مشخص شد، آیا خیالت راحت‌تر شد، یا هنوز مغزت برای شروع کردن همون یک کار هم بهانه میاره و تعلل می‌کنه؟",
+      "branches": {
+        "prioritized": "end_study_positive",
+        "hesitant_to_start": "leaf_implementation_intentions"
+      }
+    },
+    "leaf_implementation_intentions": {
+      "type": "leaf",
+      "technique_kb_ids": [18],
+      "next_node": "end_study_supported"
+    },
+    "leaf_rough_draft": {
+      "type": "leaf",
+      "technique_kb_ids": [20],
+      "next_node": "checkin_rough_draft"
+    },
+    "checkin_rough_draft": {
+      "type": "question",
+      "prompt_to_user": "آیا برات ممکنه این اجازه رو به خودت بدی که خروجی اولت معمولی یا حتی ضعیف باشه تا فقط پیش بره، یا هنوز مقاومت داری؟",
+      "branches": {
+        "accept_imperfect": "end_study_positive",
+        "still_resisting": "leaf_implementation_intentions"
+      }
+    },
+    "end_study_positive": {
+      "type": "end",
+      "closing_style": "positive"
+    },
+    "end_study_supported": {
+      "type": "end",
+      "closing_style": "needs_more_support"
+    }
   }
 }
