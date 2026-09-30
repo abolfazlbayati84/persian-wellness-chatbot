@@ -257,7 +257,8 @@ def end_session(
         .all()
     )
 
-    if rows:
+    profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
+    if rows and profile and profile.consent_privacy:
         transcript = "\n".join(f"{m.role}: {m.content}" for m in rows)
         existing = db.query(EpisodicSummary).filter(EpisodicSummary.user_id == current_user.id).first()
 
@@ -392,8 +393,15 @@ def chat_turn(
 
     else:
         profile = db.query(Profile).filter(Profile.user_id == s.user_id).first()
+        if profile and profile.onboarding_completed and not profile.consent_ai_support:
+            raise HTTPException(
+                status_code=403,
+                detail="User has not consented to AI-assisted mental wellness support.",
+            )
+
+        has_privacy_consent = bool(profile and profile.consent_privacy)
         profile_parts = []
-        if profile:
+        if profile and has_privacy_consent:
             for field in PROFILE_FIELDS:
                 val = getattr(profile, field, None)
                 if val not in (None, "", []):
@@ -422,12 +430,13 @@ def chat_turn(
         ]
         memory_summary = build_memory_summary(memory_items)
 
-        user_profile_summary = (
-            db.query(EpisodicSummary).filter(EpisodicSummary.user_id == s.user_id).first()
-        )
-        if user_profile_summary:
-            long_term_text = f"[شناخت کلی از این کاربر] {user_profile_summary.summary_text}"
-            memory_summary = f"{long_term_text}\n\n{memory_summary}" if memory_summary else long_term_text
+        if has_privacy_consent:
+            user_profile_summary = (
+                db.query(EpisodicSummary).filter(EpisodicSummary.user_id == s.user_id).first()
+            )
+            if user_profile_summary:
+                long_term_text = f"[شناخت کلی از این کاربر] {user_profile_summary.summary_text}"
+                memory_summary = f"{long_term_text}\n\n{memory_summary}" if memory_summary else long_term_text
 
         tree_handled = False
 
@@ -534,8 +543,11 @@ def chat_turn(
                 if retrieved_chunks else None
             )
 
-            candidate_past_messages = search_past_messages(
-                db, s.user_id, s.id, payload.user_text, debug_mode=debug_mode,
+            candidate_past_messages = (
+                search_past_messages(
+                    db, s.user_id, s.id, payload.user_text, debug_mode=debug_mode,
+                )
+                if has_privacy_consent else []
             )
             relevant_past_messages = filter_relevant_past_messages(
                 payload.user_text, candidate_past_messages,
