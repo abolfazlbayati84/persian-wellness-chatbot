@@ -198,12 +198,28 @@ python scripts/eval_kb_retrieval.py
 # 2. Evaluate Domain & Crisis Risk Classification (29/29 benchmarks)
 python scripts/eval_classifiers.py
 
-# 3. Test PostgreSQL Database Connectivity
+# 3. Multi-Tier Crisis Safety & Harmful Output Blocking (C-SSRS & ToxiGen-aligned)
+python scripts/bench_safety_probes.py
+
+# 4. Persian Sentiment & Domain Routing Alignment (SentiPers & ParsiNLU-derived)
+python scripts/bench_sentitpers_alignment.py
+
+# 5. MTEB-Style Embedding Quality & Semantic Textual Similarity (multilingual-e5-base)
+python scripts/bench_mteb_embedding.py
+
+# 6. Test PostgreSQL Database Connectivity
 python scripts/test_db.py
 
-# 4. Verify Google Gemini API Integration and Persian Output
+# 7. Verify Google Gemini API Integration and Persian Output
 python scripts/test_google_chat.py
 ```
+
+### Benchmark Evaluation Suites
+
+The repository includes curated evaluation suites aligned with standard clinical and NLP benchmarks:
+- **Crisis Safety Triage (`bench_safety_probes.py`):** Evaluates severe risk recall (C-SSRS aligned), eRisk ERDE-5 early detection error proxy, and ToxiGen-style harmful generation blocking (`is_blocked_output`).
+- **Domain & Sentiment Alignment (`bench_sentitpers_alignment.py`):** Evaluates negative-to-wellness routing against SentiPers sentiment samples (Hosseini et al., 2018) and multi-domain classification against ParsiNLU benchmarks (Khashabi et al., 2021).
+- **MTEB-Style Embedding Quality (`bench_mteb_embedding.py`):** Tests Semantic Textual Similarity (STS Spearman rho) and domain clustering separation on Persian clinical texts using `intfloat/multilingual-e5-base`.
 
 ---
 
