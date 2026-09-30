@@ -46,7 +46,7 @@ def main():
                 source=doc.get("source"),
                 chunk_text=doc["chunk_text"],
                 embedding=vector,
-                review_status="clinician_approved",
+                review_status="draft",
             )
             db.add(row)
             print(f"  [insert {i}/{len(prepared)}] (id={doc['id']}) {doc['domain']} :: {doc['title']}")
