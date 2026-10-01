@@ -1,21 +1,21 @@
 # Persian Mental Wellness Chatbot (همیار آرام)
 
-An intelligent, interactive Persian mental wellness assistant designed around Cognitive Behavioral Therapy (**CBT**) and Acceptance and Commitment Therapy (**ACT**) principles. The system integrates clinical knowledge retrieval (Hybrid RAG), structured multi-step decision trees, cross-session adaptive memory, and a rigorous multi-tier crisis safety triage engine.
+An intelligent, interactive Persian mental wellness assistant designed around Cognitive Behavioral Therapy (**CBT**), Acceptance and Commitment Therapy (**ACT**), and Dialectical Behavior Therapy (**DBT**) principles. The system integrates clinical knowledge retrieval (Domain-Filtered Dense RAG), structured multi-step decision trees, cross-session adaptive memory, and a multi-tier crisis safety triage engine.
 
 ---
 
 ## Key System Capabilities
 
 ### 1. Multi-Tier Risk Triage & Crisis Safety
-- **Severe Crisis (Deterministic Bypass):** Any self-harm or suicidal disclosure immediately bypasses the LLM and conversational tree. The system returns an immediate intervention message providing official Iranian crisis hotlines:
+- **Severe Crisis (Deterministic Bypass):** Any self-harm or suicidal disclosure immediately bypasses generative LLM inference and active decision trees. The system returns an immediate emergency intervention message providing official Iranian crisis hotlines:
   - **1480:** Voice of Counseling (صدای مشاور بهزیستی)
   - **123:** Social Emergency Services (اورژانس اجتماعی)
   - **115:** Medical Emergency (اورژانس پزشکی)
-- **Moderate & Low Triage:** Automatically adapts tone, prioritizes somatic grounding, and de-escalates acute distress without triggering false-positive crisis blocks.
-- **Harmful Output Guardrails:** Evaluates generated assistant output and blocks any accidental mentions of suicide methods, lethal dosage, or self-harm instructions.
+- **Moderate & Low Triage:** Automatically adapts tone, prioritizes somatic grounding, and provides supportive escalation guidance without triggering false-positive crisis blocks.
+- **Harmful Output Guardrails:** Evaluates assistant output using regex patterns to block accidental mentions of suicide methods, lethal dosage, or self-harm instructions.
 
-### 2. Evidence-Based Clinical Decision Trees
-Includes 5 structured, multi-step conversation graphs (55 validated nodes) covering common clinical presentations:
+### 2. Structured Clinical Decision Trees
+Includes 5 structured, multi-step conversation graphs (55 structured nodes) covering common psychological presentations:
 - **Stress & Somatic Anxiety** (`stress_anxiety.json`)
 - **Depression, Inertia & Motivation** (`depression_motivation.json`)
 - **Relationships & Interpersonal Conflict** (`relationships_social.json`)
@@ -23,20 +23,20 @@ Includes 5 structured, multi-step conversation graphs (55 validated nodes) cover
 - **Self-Esteem & Inner Critic** (`self_esteem.json`)
 
 **Features:**
-- Step-by-step diagnostic probing questions.
+- Step-by-step assessment questions.
 - Dynamic branch classification via LLM (`classify_branch`).
 - Graceful handling of ambiguous responses (`clarify=True` with abandonment fallback after repeated ambiguity).
-- Intervention delivery via leaf nodes referencing dedicated clinical techniques.
-- Post-intervention readiness checking and alternative branch fallback.
+- Intervention delivery via leaf nodes referencing structured therapeutic techniques.
+- Post-intervention check-ins and alternative branch fallback.
 
-### 3. Clinical Knowledge Base & Vector Retrieval (Hybrid RAG)
-- **Curated Knowledge Base:** 25 evidence-based clinical technique documents with fixed sequence keys.
-- **Offline Dense Embeddings:** Local embeddings powered by `intfloat/multilingual-e5-base` with appropriate `passage: ` and `query: ` prefixes for high-precision retrieval without external API rate limits.
+### 3. Clinical Knowledge Base & Vector Retrieval (Domain-Filtered RAG)
+- **Curated Knowledge Base:** 25 structured clinical technique documents (maintained in draft review status).
+- **Offline Dense Embeddings:** Local embeddings powered by `intfloat/multilingual-e5-base` with appropriate `passage: ` and `query: ` prefixes for dense retrieval without external API rate limits.
 - **Vector Storage:** PostgreSQL equipped with the `pgvector` extension.
-- **Domain-Filtered Semantic Search:** Queries are mapped to their respective therapeutic domain to eliminate cross-topic interference.
+- **Domain-Filtered Semantic Search:** Queries are mapped to their respective therapeutic domain to reduce cross-topic interference.
 
 ### 4. Cross-Session Memory & Adaptive Profile
-- **Automated Background Summaries:** Background summarization of conversations when switching sessions or starting a new chat.
+- **Session Summaries:** Synchronous summarization of conversation history upon switching sessions or starting a new chat (gated by user privacy consent).
 - **Rolling Clinical Profile:** Consolidates historical user themes, agreed action steps, and emotional trajectories into a compact, fixed-size (~150 words) Persian summary.
 - **In-Context Continuity:** Seamlessly recalls relevant past discussions when returning to the chatbot.
 
@@ -118,10 +118,10 @@ docker compose up --build
 
 #### 4. Run evaluation suites inside the container:
 ```bash
-# Evaluate Knowledge Base RAG Retrieval Precision (6/6 benchmarks)
+# Evaluate Knowledge Base RAG Retrieval Routing (6 handcrafted test cases)
 docker compose exec web python scripts/eval_kb_retrieval.py
 
-# Evaluate Domain & Crisis Risk Classification (29/29 benchmarks)
+# Evaluate Domain & Crisis Risk Classification (29 handcrafted test cases)
 docker compose exec web python scripts/eval_classifiers.py
 ```
 
@@ -192,16 +192,16 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 The repository includes dedicated evaluation suites to verify system behavior:
 
 ```bash
-# 1. Evaluate Knowledge Base RAG Retrieval Precision (6/6 benchmarks)
+# 1. Evaluate Knowledge Base RAG Retrieval Routing (6 handcrafted test cases)
 python scripts/eval_kb_retrieval.py
 
-# 2. Evaluate Domain & Crisis Risk Classification (29/29 benchmarks)
+# 2. Evaluate Domain & Crisis Risk Classification (29 handcrafted test cases)
 python scripts/eval_classifiers.py
 
-# 3. Multi-Tier Crisis Safety & Harmful Output Blocking (C-SSRS & ToxiGen-aligned)
+# 3. Multi-Tier Crisis Safety & Harmful Output Blocking (C-SSRS- & ToxiGen-inspired)
 python scripts/bench_safety_probes.py
 
-# 4. Persian Sentiment & Domain Routing Alignment (SentiPers & ParsiNLU-derived)
+# 4. Persian Sentiment & Domain Routing Alignment (SentiPers- & ParsiNLU-style probes)
 python scripts/bench_sentitpers_alignment.py
 
 # 5. MTEB-Style Embedding Quality & Semantic Textual Similarity (multilingual-e5-base)
@@ -216,15 +216,15 @@ python scripts/test_google_chat.py
 
 ### Benchmark Evaluation Suites
 
-The repository includes curated evaluation suites aligned with standard clinical and NLP benchmarks:
-- **Crisis Safety Triage (`bench_safety_probes.py`):** Evaluates severe risk recall (C-SSRS aligned), eRisk ERDE-5 early detection error proxy, and ToxiGen-style harmful generation blocking (`is_blocked_output`).
-- **Domain & Sentiment Alignment (`bench_sentitpers_alignment.py`):** Evaluates negative-to-wellness routing against SentiPers sentiment samples (Hosseini et al., 2018) and multi-domain classification against ParsiNLU benchmarks (Khashabi et al., 2021).
+The repository includes curated evaluation suites evaluated against handcrafted test probes:
+- **Crisis Safety Triage (`bench_safety_probes.py`):** Evaluates severe risk recall (C-SSRS-inspired criteria), ERDE-5 single-turn proxy, and ToxiGen-style simulated output instruction blocking (`is_blocked_output`).
+- **Domain & Sentiment Alignment (`bench_sentitpers_alignment.py`):** Evaluates negative-to-wellness routing against SentiPers-style sentiment probes and multi-domain classification against handcrafted ParsiNLU-style domain probes.
 - **MTEB-Style Embedding Quality (`bench_mteb_embedding.py`):** Tests Semantic Textual Similarity (STS Spearman rho) and domain clustering separation on Persian clinical texts using `intfloat/multilingual-e5-base`.
 
 ---
 
 ## Ethical Principles & Clinical Disclaimers
 
-1. **Non-Diagnostic:** This chatbot is an educational self-help companion rooted in evidence-based CBT and ACT exercises. It does not provide medical diagnoses, psychiatric evaluations, or pharmaceutical prescriptions.
-2. **Mandatory Crisis Escalation:** The platform is not an emergency response provider. Users presenting severe distress or self-harm intent are immediately escalated to accredited human emergency services.
-3. **Data Confidentiality:** User session histories and clinical summaries are stored securely and partitioned per authenticated account.
+1. **Non-Diagnostic:** This chatbot is an educational self-help companion rooted in established CBT, ACT, and DBT exercises. It does not provide medical diagnoses, psychiatric evaluations, or pharmaceutical prescriptions.
+2. **Mandatory Crisis Escalation:** The platform is not an emergency response provider. Users presenting severe distress or self-harm intent are immediately escalated to accredited human emergency services (1480, 123, 115).
+3. **Data Confidentiality:** User session histories and clinical summaries are partitioned per authenticated account (prototype storage, unencrypted at rest).
